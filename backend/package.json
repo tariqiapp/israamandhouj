@@ -1,0 +1,10 @@
+{
+  "name": "tariqui-backend",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tariqui backend placeholder (to be implemented in P-11)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

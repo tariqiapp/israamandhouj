@@ -3,195 +3,521 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TARIQ. | Covoiturage en Tunisie</title>
-    <meta
-      name="description"
-      content="TARIQ. est la plateforme de covoiturage tunisienne pour voyager ensemble a travers la Tunisie."
-    />
-    <link rel="icon" type="image/png" href="icone.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <title>Tariqui</title>
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="site-header" id="siteHeader">
-      <div class="container nav-content">
-        <a href="#" class="brand" aria-label="Accueil TARIQ.">
-          <img src="logo tariqi 1.png" alt="Logo TARIQ." class="brand-logo" />
+    <header id="site-header">
+      <div class="nav-wrapper">
+        <a class="nav-brand" href="#hero" aria-label="Retour à l'accueil Tariqui">
+          <img src="assets/logo tariqi 1.png" alt="Tariqui — Accueil" />
         </a>
 
-        <nav class="main-nav" aria-label="Navigation principale">
+        <nav class="nav-links" aria-label="Navigation principale">
           <a href="#trips">Covoiturage</a>
-          <a href="#how-it-works">Comment ca marche</a>
-          <a href="#about">A propos</a>
+          <a href="#how-it-works">Comment ça marche</a>
+          <a href="#about">À propos</a>
         </nav>
 
         <div class="nav-actions">
-          <button class="btn btn-outline">Se connecter</button>
-          <button class="btn btn-green">Proposer un trajet</button>
+          <button class="btn-outline" type="button">Se connecter</button>
+          <button class="btn-filled" type="button">Proposer un trajet</button>
         </div>
 
-        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Ouvrir le menu">
+        <button
+          class="hamburger"
+          type="button"
+          aria-label="Ouvrir le menu"
+          aria-expanded="false"
+          aria-controls="mobile-menu"
+        >
           <span></span>
           <span></span>
           <span></span>
         </button>
       </div>
 
-      <div class="mobile-menu" id="mobileMenu">
+      <div id="mobile-menu" class="mobile-menu" aria-label="Menu mobile">
         <a href="#trips">Covoiturage</a>
-        <a href="#how-it-works">Comment ca marche</a>
-        <a href="#about">A propos</a>
-        <button class="btn btn-outline">Se connecter</button>
-        <button class="btn btn-green">Proposer un trajet</button>
+        <a href="#how-it-works">Comment ça marche</a>
+        <a href="#about">À propos</a>
+        <button class="btn-outline" type="button">Se connecter</button>
+        <button class="btn-filled" type="button">Proposer un trajet</button>
       </div>
     </header>
 
-    <main>
-      <section class="hero" id="hero">
-        <div class="hero-bg-layer" aria-hidden="true"></div>
-        <div class="hero-overlay" aria-hidden="true"></div>
+    <!-- HERO -->
+    <section id="hero">
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        
+        <h1>Voyagez ensemble<br />à travers la Tunisie.</h1>
+        <p class="hero-sub">
+          Avec Tariqi, le covoiturage devient simple et sécurisé en Tunisie.
+        </p>
+      </div>
+    </section>
 
-        <div class="container hero-content">
-          <div class="hero-grid">
-            <div class="hero-text">
-              <p class="hero-kicker">Plateforme tunisienne de covoiturage</p>
-              <h1>Voyagez ensemble a travers la Tunisie</h1>
-              <p>
-                Rejoignez des conducteurs verifies, partagez les frais et transformez
-                chaque trajet en moment convivial, de Tunis a Djerba.
-              </p>
-            </div>
-
-            <figure class="hero-media">
-              <img
-                src="amis-dans-voiture-faisant-voyage-ensemble_23-2149073959.avif"
-                alt="Amis qui voyagent en voiture"
-              />
-            </figure>
-          </div>
-
-          <form class="search-bar" aria-label="Rechercher un trajet">
-            <label class="search-field">
-              <span class="field-label">📍 Depart</span>
-              <input type="text" placeholder="Ex: Tunis" />
-            </label>
-
-            <label class="search-field">
-              <span class="field-label">📍 Destination</span>
-              <input type="text" placeholder="Ex: Sousse" />
-            </label>
-
-            <label class="search-field">
-              <span class="field-label">📅 Date</span>
-              <input type="date" />
-            </label>
-
-            <label class="search-field">
-              <span class="field-label">👤 Passagers</span>
-              <select>
-                <option value="1">1 passager</option>
-                <option value="2">2 passagers</option>
-                <option value="3">3 passagers</option>
-                <option value="4">4 passagers</option>
-              </select>
-            </label>
-
-            <button type="submit" class="btn btn-yellow">Rechercher</button>
-          </form>
-        </div>
-      </section>
-
-      <section class="popular-trips section" id="trips">
-        <div class="container">
-          <div class="section-head">
-            <h2>Les meilleurs trajets en Tunisie</h2>
-            <div class="carousel-controls">
-              <button class="carousel-btn" id="prevBtn" aria-label="Precedent">&lt;</button>
-              <button class="carousel-btn" id="nextBtn" aria-label="Suivant">&gt;</button>
-            </div>
-          </div>
-
-          <div class="trips-carousel" id="tripsCarousel"></div>
-        </div>
-      </section>
-
-      <section class="how-it-works section" id="how-it-works">
-        <div class="container">
-          <h2>Comment ca marche</h2>
-          <div class="steps-grid">
-            <article class="step-card">
-              <div class="step-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M11 4a7 7 0 105.29 11.59l3.56 3.56 1.41-1.41-3.56-3.56A7 7 0 0011 4z" stroke="currentColor" stroke-width="1.8"/>
-                </svg>
-              </div>
-              <h3>Recherchez</h3>
-              <p>Trouvez un trajet adapte a votre ville de depart, destination et date.</p>
-            </article>
-
-            <article class="step-card">
-              <div class="step-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.8"/>
-                  <path d="M8 12h8" stroke="currentColor" stroke-width="1.8"/>
-                </svg>
-              </div>
-              <h3>Reservez</h3>
-              <p>Confirmez votre place en quelques clics et contactez le conducteur.</p>
-            </article>
-
-            <article class="step-card">
-              <div class="step-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 15l1.5-5h13L20 15" stroke="currentColor" stroke-width="1.8"/>
-                  <circle cx="7" cy="16" r="2" stroke="currentColor" stroke-width="1.8"/>
-                  <circle cx="17" cy="16" r="2" stroke="currentColor" stroke-width="1.8"/>
-                </svg>
-              </div>
-              <h3>Voyagez</h3>
-              <p>Profitez du trajet, partagez les frais et rencontrez de nouvelles personnes.</p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="cta section" id="about">
-        <div class="container cta-content">
-          <div>
-            <p class="cta-kicker">Conducteurs, c'est votre tour</p>
-            <h2>Publiez votre trajet et remplissez vos places libres</h2>
-          </div>
-          <button class="btn btn-green">Publiez votre trajet</button>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <div class="container footer-content">
-        <div class="footer-brand">
-          <img src="logo tariqi 1.png" alt="Logo TARIQ." />
-          <p>Covoiturage tunisien simple, humain et malin.</p>
-        </div>
-
-        <div class="footer-links">
-          <a href="#trips">Trajets</a>
-          <a href="#how-it-works">Comment ca marche</a>
-          <a href="#about">A propos</a>
-          <a href="#">Support</a>
-        </div>
-
-        <div class="footer-social">
-          <a href="#" aria-label="Facebook">Facebook</a>
-          <a href="#" aria-label="Instagram">Instagram</a>
-          <a href="#" aria-label="LinkedIn">LinkedIn</a>
+    <!-- SEARCH BAR — sits in the document flow just after #hero -->
+    <div id="search-bar" class="search-bar" aria-label="Rechercher un trajet">
+      <div class="search-field">
+        <span class="search-icon">
+          <span class="material-symbols-outlined">location_on</span>
+        </span>
+        <div class="search-field-text">
+          <label for="input-depart">Départ</label>
+          <input id="input-depart" type="text" placeholder="Ex: Tunis" />
         </div>
       </div>
-    </footer>
+
+      <div class="search-divider"></div>
+
+      <div class="search-field">
+        <span class="search-icon">
+          <span class="material-symbols-outlined">location_on</span>
+        </span>
+        <div class="search-field-text">
+          <label for="input-destination">Destination</label>
+          <input id="input-destination" type="text" placeholder="Ex: Sfax" />
+        </div>
+      </div>
+
+      <div class="search-divider"></div>
+
+      <div class="search-field">
+        <span class="search-icon">
+          <span class="material-symbols-outlined">calendar_today</span>
+        </span>
+        <div class="search-field-text">
+          <label for="input-date">Date</label>
+          <input id="input-date" type="date" />
+        </div>
+      </div>
+
+      <div class="search-divider"></div>
+
+      <div class="search-field">
+        <span class="search-icon">
+          <span class="material-symbols-outlined">person</span>
+        </span>
+        <div class="search-field-text">
+          <label for="input-passagers">Passagers</label>
+          <select id="input-passagers">
+            <option value="1">1 passager</option>
+            <option value="2">2 passagers</option>
+            <option value="3">3 passagers</option>
+            <option value="4">4 passagers</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="search-submit" aria-label="Lancer la recherche" type="button">
+        <span class="material-symbols-outlined">search</span>
+        Rechercher
+      </button>
+    </div>
+
+    <section id="destinations">
+      <div class="destinations-header">
+        <div class="destinations-title-group">
+          <p class="section-kicker">Où voulez-vous aller ?</p>
+          <h2>Destinations populaires</h2>
+          <p class="section-sub">Les routes les plus empruntées par nos voyageurs.</p>
+        </div>
+        <div class="destinations-controls">
+          <button class="dest-arrow" id="dest-prev" aria-label="Précédent" type="button">
+            <span class="material-symbols-outlined">arrow_back</span>
+          </button>
+          <button class="dest-arrow" id="dest-next" aria-label="Suivant" type="button">
+            <span class="material-symbols-outlined">arrow_forward</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="destinations-track-wrapper">
+        <div class="destinations-track" id="dest-track">
+          <article class="dest-card" data-city="Tunis">
+            <img src="assets/tunis.jpeg" alt="Tunis, capitale de la Tunisie" />
+            <div class="dest-card-body">
+              <h3>Tunis</h3>
+              <span class="dest-price">À partir de 5 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Sousse">
+            <img src="assets/sousse.webp" alt="Sousse, perle du Sahel" />
+            <div class="dest-card-body">
+              <h3>Sousse</h3>
+              <span class="dest-price">À partir de 8 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Sfax">
+            <img src="assets/sfax.jpg" alt="Sfax, capitale économique du sud" />
+            <div class="dest-card-body">
+              <h3>Sfax</h3>
+              <span class="dest-price">À partir de 12 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Bizerte">
+            <img src="assets/bizerte.jpg" alt="Bizerte, la ville du nord" />
+            <div class="dest-card-body">
+              <h3>Bizerte</h3>
+              <span class="dest-price">À partir de 7 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Gabès">
+            <img src="assets/gabes.jpg" alt="Gabès, oasis méditerranéenne" />
+            <div class="dest-card-body">
+              <h3>Gabès</h3>
+              <span class="dest-price">À partir de 15 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Hammamet">
+            <!-- TODO: Replace placeholder with assets/hammamet.jpg when asset is available -->
+            <img
+              src="assets/Hammamet.webp"
+              alt="Hammamet, station balnéaire de Tunisie"
+            />
+            <div class="dest-card-body">
+              <h3>Hammamet</h3>
+              <span class="dest-price">À partir de 6 DT</span>
+            </div>
+          </article>
+
+          <article class="dest-card" data-city="Djerba">
+            <!-- TODO: Replace placeholder with assets/djerba.jpg when asset is available -->
+            <img
+              src="assets/djerba.webp"
+              alt="Djerba, île du soleil tunisien"
+            />
+            <div class="dest-card-body">
+              <h3>Djerba</h3>
+              <span class="dest-price">À partir de 22 DT</span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="ratings">
+      <div class="ratings-header">
+        <p class="section-kicker">Ils nous font confiance</p>
+        <h2>Ce qu'ils disent de Tariqi</h2>
+      </div>
+
+      <div class="ratings-track-outer">
+        <div class="ratings-track">
+          <!-- SET 1 -->
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green)">AM</div>
+              <div class="rating-meta">
+                <span class="rating-name">Aziz M.</span>
+                <span class="rating-route">Tunis → Sousse</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Application très fiable, je me sens en confiance à chaque trajet."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-sky)">SR</div>
+              <div class="rating-meta">
+                <span class="rating-name">Sarra R.</span>
+                <span class="rating-route">Sfax → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Très bonne application, simple à utiliser et très pratique pour mes déplacements
+              en Tunisie."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-yellow)">KB</div>
+              <div class="rating-meta">
+                <span class="rating-name">Karim B.</span>
+                <span class="rating-route">Bizerte → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Tariqi m'a vraiment facilité la vie pour mes trajets quotidiens."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green)">LT</div>
+              <div class="rating-meta">
+                <span class="rating-name">Lina T.</span>
+                <span class="rating-route">Sousse → Sfax</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Application au top, j'ai économisé du temps et de l'argent grâce au covoiturage."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-sky)">YB</div>
+              <div class="rating-meta">
+                <span class="rating-name">Yasmine B.</span>
+                <span class="rating-route">Hammamet → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">"Rapide, propre et sympa. Je re-réserve dès demain."</p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green-dark)">MK</div>
+              <div class="rating-meta">
+                <span class="rating-name">Mehdi K.</span>
+                <span class="rating-route">Tunis → Gabès</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="4.5 étoiles sur 5">
+              ★★★★<span style="opacity: 0.4">★</span>
+            </div>
+            <p class="rating-quote">
+              "Le conducteur m'a mis à l'aise dès le départ. Trajet agréable du début à la fin."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-yellow)">NO</div>
+              <div class="rating-meta">
+                <span class="rating-name">Nour O.</span>
+                <span class="rating-route">Djerba → Sfax</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Plateforme sérieuse et bien pensée. Enfin une solution adaptée à la Tunisie."
+            </p>
+          </article>
+
+          <!-- SET 2 — exact duplicate for seamless loop -->
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green)">AM</div>
+              <div class="rating-meta">
+                <span class="rating-name">Aziz M.</span>
+                <span class="rating-route">Tunis → Sousse</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Application très fiable, je me sens en confiance à chaque trajet."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-sky)">SR</div>
+              <div class="rating-meta">
+                <span class="rating-name">Sarra R.</span>
+                <span class="rating-route">Sfax → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Très bonne application, simple à utiliser et très pratique pour mes déplacements
+              en Tunisie."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-yellow)">KB</div>
+              <div class="rating-meta">
+                <span class="rating-name">Karim B.</span>
+                <span class="rating-route">Bizerte → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Tariqi m'a vraiment facilité la vie pour mes trajets quotidiens."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green)">LT</div>
+              <div class="rating-meta">
+                <span class="rating-name">Lina T.</span>
+                <span class="rating-route">Sousse → Sfax</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Application au top, j'ai économisé du temps et de l'argent grâce au covoiturage."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-sky)">YB</div>
+              <div class="rating-meta">
+                <span class="rating-name">Yasmine B.</span>
+                <span class="rating-route">Hammamet → Tunis</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">"Rapide, propre et sympa. Je re-réserve dès demain."</p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-green-dark)">MK</div>
+              <div class="rating-meta">
+                <span class="rating-name">Mehdi K.</span>
+                <span class="rating-route">Tunis → Gabès</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="4.5 étoiles sur 5">
+              ★★★★<span style="opacity: 0.4">★</span>
+            </div>
+            <p class="rating-quote">
+              "Le conducteur m'a mis à l'aise dès le départ. Trajet agréable du début à la fin."
+            </p>
+          </article>
+
+          <article class="rating-card">
+            <div class="rating-top">
+              <div class="rating-avatar" style="--avatar-color: var(--color-yellow)">NO</div>
+              <div class="rating-meta">
+                <span class="rating-name">Nour O.</span>
+                <span class="rating-route">Djerba → Sfax</span>
+              </div>
+            </div>
+            <div class="rating-stars" aria-label="5 étoiles sur 5">★★★★★</div>
+            <p class="rating-quote">
+              "Plateforme sérieuse et bien pensée. Enfin une solution adaptée à la Tunisie."
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-it-works">
+      <div class="hiw-inner">
+        <div class="hiw-header">
+          <p class="section-kicker">Simple par définition</p>
+          <h2>Comment ça marche ?</h2>
+        </div>
+
+        <div class="hiw-steps">
+          <article class="hiw-step">
+            <div class="hiw-step-number" aria-hidden="true">01</div>
+            <div class="hiw-step-icon">
+              <span class="material-symbols-outlined">travel_explore</span>
+            </div>
+            <div class="hiw-step-content">
+              <h3>Recherchez</h3>
+              <p>
+                Entrez votre ville de départ, votre destination et la date souhaitée. Trouvez
+                un trajet qui vous convient en quelques secondes.
+              </p>
+            </div>
+          </article>
+
+          <div class="hiw-connector" aria-hidden="true">
+            <div class="hiw-connector-line"></div>
+            <span class="material-symbols-outlined hiw-connector-arrow">arrow_forward</span>
+          </div>
+
+          <article class="hiw-step">
+            <div class="hiw-step-number" aria-hidden="true">02</div>
+            <div class="hiw-step-icon">
+              <span class="material-symbols-outlined">check_circle</span>
+            </div>
+            <div class="hiw-step-content">
+              <h3>Réservez</h3>
+              <p>
+                Choisissez votre conducteur, réservez votre place et recevez la confirmation
+                directement sur votre téléphone.
+              </p>
+            </div>
+          </article>
+
+          <div class="hiw-connector" aria-hidden="true">
+            <div class="hiw-connector-line"></div>
+            <span class="material-symbols-outlined hiw-connector-arrow">arrow_forward</span>
+          </div>
+
+          <article class="hiw-step">
+            <div class="hiw-step-number" aria-hidden="true">03</div>
+            <div class="hiw-step-icon">
+              <span class="material-symbols-outlined">directions_car</span>
+            </div>
+            <div class="hiw-step-content">
+              <h3>Voyagez</h3>
+              <p>
+                Retrouvez votre conducteur au point de rendez-vous et profitez du trajet. Simple,
+                humain, économique.
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="conducteur">
+      <div class="conducteur-inner">
+        <div class="conducteur-content">
+          <p class="section-kicker">Vous conduisez déjà ?</p>
+          <h2>Autant ne pas conduire seul.</h2>
+          <p class="conducteur-copy">
+            Publiez vos trajets sur Tariqi, remplissez vos places libres et couvrez vos frais
+            d'essence. Des milliers de passagers vous attendent sur les routes de Tunisie.
+          </p>
+
+          <ul class="conducteur-trust" aria-label="Avantages conducteur">
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">directions_car</span>
+              <span>Trajets flexibles</span>
+            </li>
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+              <span>Couvrez vos frais</span>
+            </li>
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">verified_user</span>
+              <span>Conducteurs vérifiés</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="conducteur-media">
+          <div class="conducteur-image-wrap">
+            <img
+              src="assets/image_voiture.png"
+              alt="Conducteur et passagers dans une voiture en Tunisie"
+            />
+          </div>
+          <a class="conducteur-cta" href="driver.html">Devenir conducteur →</a>
+        </div>
+      </div>
+    </section>
 
     <script src="script.js"></script>
   </body>

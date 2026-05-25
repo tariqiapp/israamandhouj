@@ -11,8 +11,88 @@
     </nav>
 
     <div class="nav-actions">
-      <button class="btn-outline" type="button">Se connecter</button>
+      <button class="btn-outline" type="button" data-auth-trigger>
+        Se connecter
+      </button>
       <button class="btn-filled" type="button">Proposer un trajet</button>
+      <div class="download-wrapper">
+        <button
+          class="download-trigger"
+          type="button"
+          aria-haspopup="true"
+          aria-expanded="false"
+          aria-controls="download-dropdown"
+        >
+          <svg class="download-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M5 1.5h6A1.5 1.5 0 0 1 12.5 3v10A1.5 1.5 0 0 1 11 14.5H5A1.5 1.5 0 0 1 3.5 13V3A1.5 1.5 0 0 1 5 1.5Zm0 1A.5.5 0 0 0 4.5 3v10a.5.5 0 0 0 .5.5h6a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H5Zm2.25 10.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
+            />
+          </svg>
+          <span>Télécharger l'application</span>
+          <svg
+            class="download-chevron"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+          >
+            <path fill="currentColor" d="M2.1 4.2 6 8l3.9-3.8 1 1L6 10.2 1.1 5.2z" />
+          </svg>
+        </button>
+
+        <div
+          id="download-dropdown"
+          class="download-dropdown"
+          role="menu"
+          aria-label="Télécharger l'application Tariqi"
+        >
+          <div class="download-columns">
+            <div class="download-left">
+              <p class="download-label">Disponible sur</p>
+              <a
+                class="store-badge play-badge"
+                href="#"
+                role="menuitem"
+                aria-label="Télécharger sur Google Play"
+              >
+                <img
+                  src="https://play.google.com/intl/en_us/badges/static/images/badges/fr_badge_web_generic.png"
+                  height="48"
+                  alt="Disponible sur Google Play"
+                />
+              </a>
+              <a
+                class="store-badge apple-badge"
+                href="#"
+                role="menuitem"
+                aria-label="Télécharger sur l'App Store"
+              >
+                <img
+                  src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+                  height="44"
+                  alt="Télécharger dans l'App Store"
+                />
+              </a>
+              <div class="download-divider"></div>
+              <p class="download-hint">Ou scannez le QR code →</p>
+            </div>
+
+            <div class="download-right">
+              <img
+                class="download-qr"
+                src="assets/qr-tariqi.png"
+                width="160"
+                height="160"
+                alt="QR code pour télécharger l'application Tariqi"
+                role="menuitem"
+              />
+              <p class="download-qr-caption">Scanner pour télécharger</p>
+              <span class="download-chip">Tariqi App</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <button
@@ -32,7 +112,71 @@
   <a href="#destinations">Covoiturage</a>
     <a href="#how-it-works">Comment ça marche</a>
     <a href="#about">À propos</a>
-    <button class="btn-outline" type="button">Se connecter</button>
+    <div class="mobile-download">
+      <button
+        class="mobile-download-trigger"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mobile-download-panel"
+      >
+        <span class="mobile-download-label">
+          <span class="mobile-download-emoji" aria-hidden="true">📱</span>
+          Télécharger l'application
+        </span>
+        <svg
+          class="mobile-download-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+        >
+          <path fill="currentColor" d="M2.1 4.2 6 8l3.9-3.8 1 1L6 10.2 1.1 5.2z" />
+        </svg>
+      </button>
+      <div id="mobile-download-panel" class="mobile-download-panel" aria-label="Télécharger Tariqi">
+        <div class="mobile-download-badges">
+          <a
+            class="store-badge play-badge"
+            href="#"
+            role="menuitem"
+            aria-label="Télécharger sur Google Play"
+          >
+            <img
+              src="https://play.google.com/intl/en_us/badges/static/images/badges/fr_badge_web_generic.png"
+              height="42"
+              alt="Disponible sur Google Play"
+            />
+          </a>
+          <a
+            class="store-badge apple-badge"
+            href="#"
+            role="menuitem"
+            aria-label="Télécharger sur l'App Store"
+          >
+            <img
+              src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+              height="40"
+              alt="Télécharger dans l'App Store"
+            />
+          </a>
+        </div>
+        <div class="mobile-download-qr">
+          <img
+            class="download-qr"
+            src="assets/qr-tariqi.png"
+            width="120"
+            height="120"
+            alt="QR code pour télécharger l'application Tariqi"
+            role="menuitem"
+          />
+          <p class="download-qr-caption">Scanner pour télécharger</p>
+          <span class="download-chip">Tariqi App</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-outline" type="button" data-auth-trigger>
+      Se connecter
+    </button>
     <button class="btn-filled" type="button">Proposer un trajet</button>
   </div>
 </header>

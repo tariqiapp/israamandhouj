@@ -9,6 +9,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
     />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="auth.css" />
   </head>
   <body>
     <div data-component="components/header.html"></div>
@@ -106,47 +107,53 @@
 
       <div class="destinations-track-wrapper">
         <div class="destinations-track reveal-group" id="dest-track">
-          <article class="dest-card" data-city="Tunis">
+          <!-- City: Tunis -->
+          <a class="dest-card" href="search.html?to=Tunis&sort=price_asc" data-city="Tunis">
             <img src="assets/tunis.jpeg" alt="Tunis, capitale de la Tunisie" />
             <div class="dest-card-body">
               <h3>Tunis</h3>
               <span class="dest-price">À partir de 5 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Sousse">
+          <!-- City: Sousse -->
+          <a class="dest-card" href="search.html?to=Sousse&sort=price_asc" data-city="Sousse">
             <img src="assets/sousse.webp" alt="Sousse, perle du Sahel" />
             <div class="dest-card-body">
               <h3>Sousse</h3>
               <span class="dest-price">À partir de 8 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Sfax">
+          <!-- City: Sfax -->
+          <a class="dest-card" href="search.html?to=Sfax&sort=price_asc" data-city="Sfax">
             <img src="assets/sfax.jpg" alt="Sfax, capitale économique du sud" />
             <div class="dest-card-body">
               <h3>Sfax</h3>
               <span class="dest-price">À partir de 12 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Bizerte">
+          <!-- City: Bizerte -->
+          <a class="dest-card" href="search.html?to=Bizerte&sort=price_asc" data-city="Bizerte">
             <img src="assets/bizerte.jpg" alt="Bizerte, la ville du nord" />
             <div class="dest-card-body">
               <h3>Bizerte</h3>
               <span class="dest-price">À partir de 7 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Gabès">
+          <!-- City: Gabès -->
+          <a class="dest-card" href="search.html?to=Gab%C3%A8s&sort=price_asc" data-city="Gabès">
             <img src="assets/gabes.jpg" alt="Gabès, oasis méditerranéenne" />
             <div class="dest-card-body">
               <h3>Gabès</h3>
               <span class="dest-price">À partir de 15 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Hammamet">
+          <!-- City: Hammamet -->
+          <a class="dest-card" href="search.html?to=Hammamet&sort=price_asc" data-city="Hammamet">
             <!-- TODO: Replace placeholder with assets/hammamet.jpg when asset is available -->
             <img
               src="assets/Hammamet.webp"
@@ -156,9 +163,10 @@
               <h3>Hammamet</h3>
               <span class="dest-price">À partir de 6 DT</span>
             </div>
-          </article>
+          </a>
 
-          <article class="dest-card" data-city="Djerba">
+          <!-- City: Djerba -->
+          <a class="dest-card" href="search.html?to=Djerba&sort=price_asc" data-city="Djerba">
             <!-- TODO: Replace placeholder with assets/djerba.jpg when asset is available -->
             <img
               src="assets/djerba.webp"
@@ -168,7 +176,7 @@
               <h3>Djerba</h3>
               <span class="dest-price">À partir de 22 DT</span>
             </div>
-          </article>
+          </a>
         </div>
       </div>
     </section>
@@ -385,6 +393,9 @@
     </section>
 
   <section id="how-it-works">
+      <div class="features-vector-bg" aria-hidden="true">
+        <img src="assets/tariq_vector.svg" alt="" draggable="false" />
+      </div>
       <div class="hiw-inner">
         <div class="hiw-header">
           <p class="section-kicker">Simple par définition</p>
@@ -476,7 +487,7 @@
   <div class="conducteur-media reveal reveal-right">
           <div class="conducteur-image-wrap">
             <img
-              src="assets/image_voiture.png"
+              src="assets/amis-dans-voiture-faisant-voyage-ensemble_23-2149073959.avif"
               alt="Conducteur et passagers dans une voiture en Tunisie"
             />
           </div>
@@ -517,9 +528,11 @@
 
     </main>
 
+    <div data-component="auth-modal.html"></div>
     <div data-component="components/footer.html"></div>
 
     <script src="js/components.js"></script>
     <script src="script.js"></script>
+    <script src="auth-ui.js"></script>
   </body>
 </html>

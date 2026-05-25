@@ -2,6 +2,13 @@ function initHeader() {
   const header = document.getElementById('site-header');
   const hamburger = document.querySelector('.hamburger');
   const mobileMenu = document.querySelector('.mobile-menu');
+  const downloadWrapper = document.querySelector('.download-wrapper');
+  const downloadTrigger = document.querySelector('.download-trigger');
+  const downloadDropdown = document.getElementById('download-dropdown');
+  const mobileDownloadTrigger = document.querySelector('.mobile-download-trigger');
+  const mobileDownloadPanel = document.getElementById('mobile-download-panel');
+  let hoverOpenTimeout;
+  let hoverCloseTimeout;
 
   if (header) {
     window.addEventListener('scroll', () => {
@@ -14,6 +21,11 @@ function initHeader() {
       const isOpen = hamburger.classList.toggle('open');
       mobileMenu.classList.toggle('open');
       hamburger.setAttribute('aria-expanded', String(isOpen));
+
+      if (!isOpen && mobileDownloadTrigger && mobileDownloadPanel) {
+        mobileDownloadPanel.classList.remove('open');
+        mobileDownloadTrigger.setAttribute('aria-expanded', 'false');
+      }
     });
 
     mobileMenu.querySelectorAll('a').forEach((link) => {
@@ -21,8 +33,65 @@ function initHeader() {
         hamburger.classList.remove('open');
         mobileMenu.classList.remove('open');
         hamburger.setAttribute('aria-expanded', 'false');
+
+        if (mobileDownloadTrigger && mobileDownloadPanel) {
+          mobileDownloadPanel.classList.remove('open');
+          mobileDownloadTrigger.setAttribute('aria-expanded', 'false');
+        }
       });
     });
+  }
+
+  if (mobileDownloadTrigger && mobileDownloadPanel) {
+    mobileDownloadTrigger.addEventListener('click', () => {
+      const isOpen = mobileDownloadPanel.classList.toggle('open');
+      mobileDownloadTrigger.setAttribute('aria-expanded', String(isOpen));
+    });
+  }
+
+  if (downloadWrapper && downloadTrigger && downloadDropdown) {
+    const openDropdown = () => {
+      downloadDropdown.classList.add('open');
+      downloadTrigger.setAttribute('aria-expanded', 'true');
+    };
+
+    const closeDropdown = () => {
+      downloadDropdown.classList.remove('open');
+      downloadTrigger.setAttribute('aria-expanded', 'false');
+    };
+
+    downloadTrigger.addEventListener('click', () => {
+      const isOpen = downloadDropdown.classList.contains('open');
+      if (isOpen) {
+        closeDropdown();
+      } else {
+        openDropdown();
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!downloadWrapper.contains(event.target)) {
+        closeDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeDropdown();
+      }
+    });
+
+    if (window.matchMedia('(hover: hover)').matches) {
+      downloadWrapper.addEventListener('mouseenter', () => {
+        clearTimeout(hoverCloseTimeout);
+        hoverOpenTimeout = setTimeout(openDropdown, 150);
+      });
+
+      downloadWrapper.addEventListener('mouseleave', () => {
+        clearTimeout(hoverOpenTimeout);
+        hoverCloseTimeout = setTimeout(closeDropdown, 300);
+      });
+    }
   }
 }
 
@@ -60,6 +129,34 @@ function initHero() {
       { passive: true }
     );
   }
+}
+
+function initSearchBarNavigation() {
+  const searchBar = document.getElementById('search-bar');
+  if (!searchBar) return;
+
+  const submitButton = searchBar.querySelector('.search-submit');
+  const fromInput = document.getElementById('input-depart');
+  const toInput = document.getElementById('input-destination');
+  const dateInput = document.getElementById('input-date');
+
+  if (!submitButton) return;
+
+  submitButton.addEventListener('click', () => {
+    const params = new URLSearchParams();
+    if (fromInput && fromInput.value.trim()) {
+      params.set('from', fromInput.value.trim());
+    }
+    if (toInput && toInput.value.trim()) {
+      params.set('to', toInput.value.trim());
+    }
+    if (dateInput && dateInput.value) {
+      params.set('date', dateInput.value);
+    }
+
+    const query = params.toString();
+    window.location.href = query ? `search.html?${query}` : 'search.html';
+  });
 }
 
 function initDestinations() {
@@ -109,9 +206,70 @@ function initDestinations() {
   });
 }
 
+function initDestinationPrices() {
+  const cards = Array.from(document.querySelectorAll('.dest-card'));
+  if (!cards.length) return;
+
+  const requests = cards.map((card) => {
+    const cityHeading = card.querySelector('h3');
+    const city = (card.dataset.city || (cityHeading ? cityHeading.textContent : '')).trim();
+    if (!city) return Promise.resolve();
+
+    const cardBody = card.querySelector('.dest-card-body') || card;
+    let priceEl = card.querySelector('.dest-price') || card.querySelector('.card-min-price');
+
+    if (!priceEl) {
+      priceEl = document.createElement('p');
+      priceEl.className = 'card-min-price';
+      cardBody.appendChild(priceEl);
+    }
+
+    const originalText = priceEl.textContent ? priceEl.textContent.trim() : '';
+    priceEl.classList.remove('is-live', 'is-empty');
+    priceEl.classList.add('is-loading');
+    priceEl.textContent = '';
+
+    const url = `/api/trips?destination=${encodeURIComponent(city)}&limit=50`;
+
+    return fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Request failed');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        priceEl.classList.remove('is-loading');
+        const trips = data && Array.isArray(data.trips) ? data.trips : [];
+        const prices = trips
+          .map((trip) => Number(trip.price))
+          .filter((price) => Number.isFinite(price));
+
+        if (prices.length === 0) {
+          priceEl.textContent = 'Aucun trajet disponible';
+          priceEl.classList.add('is-empty');
+          priceEl.classList.remove('is-live');
+          return;
+        }
+
+        const minPrice = Math.min(...prices);
+        priceEl.textContent = `À partir de ${minPrice} DT`;
+        priceEl.classList.add('is-live');
+        priceEl.classList.remove('is-empty');
+      })
+      .catch(() => {
+        priceEl.classList.remove('is-loading');
+        priceEl.textContent = originalText;
+      });
+  });
+
+  Promise.all(requests).catch(() => {});
+}
+
 window.initHeader = initHeader;
 window.initHero = initHero;
 window.initDestinations = initDestinations;
+window.initDestinationPrices = initDestinationPrices;
 
 /* === ANIMATIONS JS === */
 function countUp(el) {
@@ -222,6 +380,8 @@ async function bootstrap() {
   initHeader();
   initHero();
   initDestinations();
+  initDestinationPrices();
+  initSearchBarNavigation();
   initAnimations();
 }
 

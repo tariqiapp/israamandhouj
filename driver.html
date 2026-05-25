@@ -8,21 +8,49 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
     />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="auth.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   </head>
   <body class="driver-page">
-    <div data-component="components/header.html"></div>
+    <header class="driver-mini-header">
+      <a class="driver-back" href="index.html">← Tariqi</a>
+      <div class="nav-actions driver-header-actions">
+        <button class="btn-outline driver-login" type="button" data-auth-trigger>
+          Se connecter
+        </button>
+      </div>
+    </header>
+
+    <div id="driver-auth-overlay" class="driver-auth-overlay" aria-hidden="true">
+      <div class="driver-auth-card">
+        <div class="driver-auth-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="64" height="64">
+            <path
+              fill="#4ecdc4"
+              d="M8 44c8-8 18-12 28-12s20 4 28 12v8H8v-8Zm20-16a8 8 0 1 1 8-8 8 8 0 0 1-8 8Zm16 0a8 8 0 1 1 8-8 8 8 0 0 1-8 8ZM12 54h40v6H12z"
+            />
+          </svg>
+        </div>
+        <h2>Connectez-vous pour proposer un trajet</h2>
+        <p>Rejoignez la communauté Tariqi et partagez vos trajets.</p>
+        <button class="driver-auth-btn" type="button" data-auth-trigger>Se connecter</button>
+      </div>
+    </div>
 
     <main>
       <section id="driver-hero">
-        <div class="driver-hero-overlay"></div>
-        <div class="driver-hero-content">
+        <div class="driver-hero-overlay">
+          <div class="driver-hero-content">
           <p class="section-kicker">Conducteurs Tariqi</p>
           <h1>Gagnez en conduisant vos trajets habituels.</h1>
           <p>
             Transformez vos places libres en revenus complémentaires tout en aidant d'autres
             voyageurs à se déplacer sereinement en Tunisie.
           </p>
+          <button class="driver-hero-cta" type="button">Devenir conducteur</button>
+          </div>
         </div>
       </section>
 
@@ -51,61 +79,136 @@
       <section id="driver-form-section">
         <div class="driver-form-wrapper">
           <div class="driver-form-heading">
-            <p class="section-kicker">Inscription rapide</p>
-            <h2>Proposez votre premier trajet</h2>
-            <p>Remplissez ce formulaire et nous vous recontacterons pour finaliser votre profil.</p>
+            <p class="section-kicker">Proposer un trajet</p>
+            <h2>Partagez votre prochain trajet</h2>
+            <p>Complétez les informations pour publier votre trajet sur Tariqi.</p>
           </div>
 
-          <form class="driver-form" action="/api/drivers/register" method="post">
-            <div class="driver-form-grid">
-              <label>
-                Nom complet
-                <input type="text" name="name" placeholder="Ex: Ahmed Ben Salah" required />
-              </label>
+          <div class="driver-form-panel" data-panel="apply">
+            <form id="driver-apply-form" class="driver-form" novalidate>
+              <div class="driver-form-grid">
+                <label class="driver-field" data-field="license_number">
+                  Numéro de permis
+                  <input type="text" name="license_number" placeholder="Ex: 12345678" />
+                  <span class="form-error"></span>
+                </label>
 
-              <label>
-                Numéro de téléphone
-                <input type="tel" name="phone" placeholder="Ex: +216 99 000 000" required />
-              </label>
+                <label class="driver-field" data-field="vehicle_info">
+                  Informations véhicule
+                  <input type="text" name="vehicle_info" placeholder="Ex: Peugeot 308, 2019, Blanc" />
+                  <span class="form-error"></span>
+                </label>
+              </div>
 
-              <label>
-                Ville de départ
-                <select name="city" required>
-                  <option value="">Sélectionner une ville</option>
-                  <option value="Tunis">Tunis</option>
-                  <option value="Sousse">Sousse</option>
-                  <option value="Sfax">Sfax</option>
-                  <option value="Bizerte">Bizerte</option>
-                  <option value="Gabès">Gabès</option>
-                  <option value="Hammamet">Hammamet</option>
-                  <option value="Djerba">Djerba</option>
-                </select>
-              </label>
+              <button type="submit">Soumettre ma candidature</button>
+            </form>
 
-              <label>
-                Modèle de voiture
-                <input type="text" name="carModel" placeholder="Ex: Kia Picanto 2021" required />
-              </label>
+            <div class="driver-apply-success">
+              <div class="success-icon" aria-hidden="true">✓</div>
+              <h3>Candidature envoyée !</h3>
+              <p>Nous examinerons votre dossier sous 24h.</p>
             </div>
+          </div>
 
-            <label>
-              Message (optionnel)
-              <textarea
-                name="message"
-                rows="4"
-                placeholder="Précisez vos horaires ou trajets fréquents..."
-              ></textarea>
-            </label>
+          <div class="driver-form-panel" data-panel="trip">
+            <form id="driver-trip-form" class="driver-form" novalidate>
+              <div class="driver-form-grid">
+                <label class="driver-field" data-field="origin">
+                  Ville de départ
+                  <input
+                    type="text"
+                    name="origin"
+                    placeholder="Ex: Tunis"
+                    list="tunisian-cities"
+                  />
+                  <span class="form-error"></span>
+                </label>
 
-            <button type="submit">Je veux conduire</button>
-          </form>
+                <label class="driver-field" data-field="destination">
+                  Ville d'arrivée
+                  <input
+                    type="text"
+                    name="destination"
+                    placeholder="Ex: Sfax"
+                    list="tunisian-cities"
+                  />
+                  <span class="form-error"></span>
+                </label>
+
+                <label class="driver-field" data-field="date">
+                  Date de départ
+                  <input type="date" name="date" />
+                  <span class="form-error"></span>
+                </label>
+
+                <label class="driver-field" data-field="time">
+                  Heure de départ
+                  <input type="time" name="time" />
+                  <span class="form-error"></span>
+                </label>
+
+                <label class="driver-field" data-field="available_seats">
+                  Places disponibles
+                  <input type="number" name="available_seats" min="1" max="8" placeholder="4" />
+                  <span class="form-error"></span>
+                </label>
+
+                <label class="driver-field" data-field="price">
+                  Prix par personne
+                  <div class="driver-input-suffix">
+                    <input type="number" name="price" min="1" placeholder="25" />
+                    <span>DT</span>
+                  </div>
+                  <span class="form-error"></span>
+                </label>
+              </div>
+
+              <div class="driver-map-block">
+                <p class="driver-map-title">Tracer votre itinéraire</p>
+                <div class="route-map-wrap">
+                  <div id="route-map" class="route-map"></div>
+                  <span class="route-hint">Cliquez sur la carte pour tracer votre itinéraire</span>
+                </div>
+                <input type="hidden" name="route_coordinates" id="route-coords" />
+                <button class="route-reset" type="button">Effacer le tracé</button>
+              </div>
+
+              <button type="submit">Publier le trajet</button>
+            </form>
+          </div>
+
+          <datalist id="tunisian-cities">
+            <option value="Tunis"></option>
+            <option value="Sfax"></option>
+            <option value="Sousse"></option>
+            <option value="Gabès"></option>
+            <option value="Bizerte"></option>
+            <option value="Ariana"></option>
+            <option value="Gafsa"></option>
+            <option value="Monastir"></option>
+            <option value="Ben Arous"></option>
+            <option value="Kasserine"></option>
+            <option value="Médenine"></option>
+            <option value="Nabeul"></option>
+            <option value="Tataouine"></option>
+            <option value="Béja"></option>
+            <option value="Jendouba"></option>
+            <option value="Mahdia"></option>
+            <option value="Siliana"></option>
+            <option value="Tozeur"></option>
+            <option value="Kébili"></option>
+            <option value="Zaghouan"></option>
+          </datalist>
         </div>
       </section>
     </main>
 
+    <div data-component="auth-modal.html"></div>
     <div data-component="components/footer.html"></div>
 
     <script src="js/components.js"></script>
     <script src="script.js"></script>
+    <script src="auth-ui.js"></script>
+    <script src="proposer.js"></script>
   </body>
 </html>

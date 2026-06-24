@@ -5,7 +5,13 @@ process.env.NODE_ENV = 'test';
 const db = require('../db');
 
 function resetDb() {
-    db.exec('DELETE FROM users;');
+    // FIXED: clear database tables in correct dependency order
+    db.exec(`
+        DELETE FROM bookings;
+        DELETE FROM driver_applications;
+        DELETE FROM trips;
+        DELETE FROM users;
+    `);
 }
 
 module.exports = { db, resetDb };

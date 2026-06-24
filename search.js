@@ -10,6 +10,8 @@ const state = {
   limit: 6
 };
 
+const API_BASE = 'http://localhost:3000';
+
 const dom = {
   stripForm: document.getElementById('search-strip-form'),
   stripFrom: document.getElementById('strip-from'),
@@ -18,8 +20,6 @@ const dom = {
   filterDate: document.getElementById('filter-date'),
   priceMin: document.getElementById('price-min'),
   priceMax: document.getElementById('price-max'),
-  priceFill: document.getElementById('price-range-fill'),
-  priceLabel: document.getElementById('price-range-label'),
   seatsValue: document.getElementById('seats-value'),
   seatsLabel: document.getElementById('seats-label'),
   sortChips: Array.from(document.querySelectorAll('.sort-chip')),
@@ -34,6 +34,14 @@ const dom = {
 const mapCache = new Map();
 const geoCache = new Map();
 let lastTrips = [];
+
+const priceMin = document.getElementById('price-min');
+const priceMax = document.getElementById('price-max');
+const trackFill = document.getElementById('track-fill');
+const tickMin = document.getElementById('tick-min');
+const tickMax = document.getElementById('tick-max');
+const priceLabel = document.getElementById('price-range-label');
+const sliderContainer = document.getElementById('slider-container');
 
 function debounce(callback, delay = 300) {
   let timer;
@@ -59,6 +67,26 @@ function parseParams() {
   state.page = Math.max(Number(params.get('page')) || 1, 1);
 }
 
+function setupSearchHeader() {
+  const host = document.querySelector('[data-component="components/header.html"]');
+  const applyHeader = () => {
+    const header = document.getElementById('site-header');
+    if (!header) return false;
+    const brand = header.querySelector('.nav-brand');
+    if (brand) brand.setAttribute('href', 'index.html');
+    return true;
+  };
+
+  if (applyHeader()) return;
+  if (!host) return;
+
+  const observer = new MutationObserver(() => {
+    if (applyHeader()) observer.disconnect();
+  });
+
+  observer.observe(host, { childList: true, subtree: true });
+}
+
 function syncInputs() {
   if (dom.stripFrom) dom.stripFrom.value = state.origin;
   if (dom.stripTo) dom.stripTo.value = state.destination;
@@ -69,7 +97,7 @@ function syncInputs() {
   if (dom.seatsValue) dom.seatsValue.textContent = String(state.seats);
   if (dom.seatsLabel) dom.seatsLabel.textContent = `${state.seats}+ place disponible`;
   setActiveSort(state.sort);
-  updateRangeFill();
+  updatePriceSlider();
 }
 
 function updateUrl() {
@@ -93,20 +121,35 @@ function setActiveSort(sort) {
   });
 }
 
-function updateRangeFill() {
-  if (!dom.priceMin || !dom.priceMax || !dom.priceFill) return;
-  const min = Number(dom.priceMin.min || 0);
-  const max = Number(dom.priceMax.max || 200);
-  const minVal = Number(dom.priceMin.value || 0);
-  const maxVal = Number(dom.priceMax.value || max);
-  const minPercent = ((minVal - min) / (max - min)) * 100;
-  const maxPercent = ((maxVal - min) / (max - min)) * 100;
+function thumbPercent(input) {
+  const min = parseFloat(input.min);
+  const max = parseFloat(input.max);
+  const val = parseFloat(input.value);
+  const rawPct = (val - min) / (max - min);
+  const thumbHalf = 9;
+  const trackWidth = sliderContainer.offsetWidth;
+  const adjustedPct = (rawPct * (trackWidth - 2 * thumbHalf) + thumbHalf) / trackWidth;
+  return adjustedPct * 100;
+}
 
-  dom.priceFill.style.left = `${minPercent}%`;
-  dom.priceFill.style.width = `${maxPercent - minPercent}%`;
-  if (dom.priceLabel) {
-    dom.priceLabel.textContent = `${minVal} DT — ${maxVal} DT`;
+function updatePriceSlider() {
+  if (parseFloat(priceMin.value) > parseFloat(priceMax.value)) {
+    priceMin.value = priceMax.value;
   }
+  if (parseFloat(priceMax.value) < parseFloat(priceMin.value)) {
+    priceMax.value = priceMin.value;
+  }
+
+  const pMin = thumbPercent(priceMin);
+  const pMax = thumbPercent(priceMax);
+
+  trackFill.style.left = `${pMin}%`;
+  trackFill.style.width = `${pMax - pMin}%`;
+
+  tickMin.style.left = `${pMin}%`;
+  tickMax.style.left = `${pMax}%`;
+
+  priceLabel.textContent = `${priceMin.value} DT — ${priceMax.value} DT`;
 }
 
 function updatePriceLimits(trips) {
@@ -121,7 +164,7 @@ function updatePriceLimits(trips) {
   if (state.maxPrice > cap) state.maxPrice = cap;
   dom.priceMin.value = String(state.minPrice);
   dom.priceMax.value = String(state.maxPrice);
-  updateRangeFill();
+  updatePriceSlider();
 }
 
 function showSkeleton() {
@@ -324,7 +367,7 @@ function renderResults(trips, pagination) {
       }
 
       try {
-        const response = await fetch('/api/bookings', {
+        const response = await fetch(`${API_BASE}/api/bookings`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -474,7 +517,7 @@ async function fetchTrips() {
   const token = getToken();
 
   try {
-    const response = await fetch(`/api/trips?${params.toString()}`, {
+    const response = await fetch(`${API_BASE}/api/trips?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     const data = await response.json();
@@ -529,24 +572,14 @@ function bindEvents() {
 
   if (dom.priceMin && dom.priceMax) {
     dom.priceMin.addEventListener('input', () => {
-      const minVal = Number(dom.priceMin.value);
-      const maxVal = Number(dom.priceMax.value);
-      if (minVal > maxVal - 5) {
-        dom.priceMin.value = String(maxVal - 5);
-      }
+      updatePriceSlider();
       state.minPrice = Number(dom.priceMin.value);
-      updateRangeFill();
       debouncedFetch();
     });
 
     dom.priceMax.addEventListener('input', () => {
-      const minVal = Number(dom.priceMin.value);
-      const maxVal = Number(dom.priceMax.value);
-      if (maxVal < minVal + 5) {
-        dom.priceMax.value = String(minVal + 5);
-      }
+      updatePriceSlider();
       state.maxPrice = Number(dom.priceMax.value);
-      updateRangeFill();
       debouncedFetch();
     });
   }
@@ -585,6 +618,7 @@ function bindEvents() {
   }
 }
 
+setupSearchHeader();
 parseParams();
 syncInputs();
 bindEvents();

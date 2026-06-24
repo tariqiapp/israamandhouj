@@ -27,9 +27,10 @@ router.post('/', authenticateToken, validate(bookingSchema), (req, res) => {
 			return res.status(400).json({ error: 'No seats available' });
 		}
 
+		// FIXED: SQLite syntax fix — use single quotes for string literal 'cancelled'
 		const existingBooking = db
 			.prepare(
-				'SELECT id FROM bookings WHERE trip_id = ? AND user_id = ? AND status != "cancelled"'
+				"SELECT id FROM bookings WHERE trip_id = ? AND user_id = ? AND status != 'cancelled'"
 			)
 			.get(trip_id, req.user.id);
 
@@ -38,8 +39,9 @@ router.post('/', authenticateToken, validate(bookingSchema), (req, res) => {
 		}
 
 		const bookTrip = db.transaction((targetTripId, userId) => {
+			// FIXED: SQLite syntax fix — use single quotes for string literal 'confirmed'
 			const insert = db.prepare(
-				'INSERT INTO bookings (trip_id, user_id, status) VALUES (?, ?, "confirmed")'
+				"INSERT INTO bookings (trip_id, user_id, status) VALUES (?, ?, 'confirmed')"
 			);
 			const result = insert.run(targetTripId, userId);
 
@@ -104,7 +106,8 @@ router.delete('/:id', authenticateToken, (req, res) => {
 		}
 
 		const cancelBooking = db.transaction((targetBookingId, tripId) => {
-			db.prepare('UPDATE bookings SET status = "cancelled" WHERE id = ?').run(targetBookingId);
+			// FIXED: SQLite syntax fix — use single quotes for string literal 'cancelled'
+			db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(targetBookingId);
 			db.prepare('UPDATE trips SET available_seats = available_seats + 1 WHERE id = ?').run(
 				tripId
 			);

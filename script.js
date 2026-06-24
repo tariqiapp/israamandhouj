@@ -1,3 +1,5 @@
+const API_BASE = 'http://localhost:3000';
+
 function initHeader() {
   const header = document.getElementById('site-header');
   const hamburger = document.querySelector('.hamburger');
@@ -229,7 +231,7 @@ function initDestinationPrices() {
     priceEl.classList.add('is-loading');
     priceEl.textContent = '';
 
-    const url = `/api/trips?destination=${encodeURIComponent(city)}&limit=50`;
+    const url = `${API_BASE}/api/trips?destination=${encodeURIComponent(city)}&limit=50`;
 
     return fetch(url)
       .then((response) => {

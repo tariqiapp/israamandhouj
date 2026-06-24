@@ -1999,6 +1999,7 @@ body {
   padding: 32px 30px;
   text-align: center;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  position: relative;
 }
 
 .driver-auth-card h2 {
@@ -2012,6 +2013,27 @@ body {
   margin: 0 0 20px;
   font-family: var(--font-body);
   color: var(--color-text-muted);
+}
+
+.driver-auth-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 20, 15, 0.08);
+  color: var(--color-text);
+  font-size: 18px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.driver-auth-close:hover {
+  background: rgba(15, 20, 15, 0.16);
 }
 
 .driver-auth-btn {

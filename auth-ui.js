@@ -1,4 +1,5 @@
 (function () {
+  const API_BASE = 'http://localhost:3000';
   let initialized = false;
 
   function initAuthUI() {
@@ -276,7 +277,7 @@
       setLoading(submitButton, true);
 
       try {
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch(`${API_BASE}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -353,7 +354,7 @@
       setLoading(submitButton, true);
 
       try {
-        const response = await fetch('/api/auth/register', {
+        const response = await fetch(`${API_BASE}/api/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -402,7 +403,7 @@
 
     async function fetchUser(token) {
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await fetch(`${API_BASE}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
 

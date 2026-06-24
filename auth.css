@@ -127,6 +127,7 @@ body.auth-modal-open {
 
 .auth-field input {
   width: 100%;
+  box-sizing: border-box;
   height: 48px;
   border: 1.5px solid #e5e7eb;
   border-radius: 12px;

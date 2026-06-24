@@ -1,5 +1,7 @@
 (function () {
+  const API_BASE = 'http://localhost:3000';
   const overlay = document.getElementById('driver-auth-overlay');
+  const overlayClose = document.querySelector('.driver-auth-close');
   const applyPanel = document.querySelector('[data-panel="apply"]');
   const tripPanel = document.querySelector('[data-panel="trip"]');
   const applyForm = document.getElementById('driver-apply-form');
@@ -29,6 +31,12 @@
     if (!overlay) return;
     overlay.classList.toggle('is-visible', show);
     overlay.setAttribute('aria-hidden', String(!show));
+
+    if (show) {
+      overlay.querySelectorAll('[data-auth-trigger]').forEach((trigger) => {
+        trigger.classList.remove('auth-hidden');
+      });
+    }
   }
 
   function setPanel(panelName) {
@@ -82,7 +90,7 @@
     }
 
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await fetch(`${API_BASE}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -133,6 +141,12 @@
     });
   }
 
+  if (overlayClose) {
+    overlayClose.addEventListener('click', () => {
+      setOverlayVisible(false);
+    });
+  }
+
   if (applyForm) {
     applyForm.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -161,7 +175,7 @@
       if (hasError) return;
 
       try {
-        const response = await fetch('/api/drivers/apply', {
+        const response = await fetch(`${API_BASE}/api/drivers/apply`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -215,7 +229,7 @@
   }
 
   async function submitTrip(payload, token, allowRetry = true) {
-    const response = await fetch('/api/trips', {
+    const response = await fetch(`${API_BASE}/api/trips`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

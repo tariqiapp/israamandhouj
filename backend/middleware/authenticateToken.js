@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not set. Server will not start.'); // HARDENED: Secrets Management
+
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -8,7 +11,7 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Token manquant' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(401).json({ error: 'Token invalide' });
     }

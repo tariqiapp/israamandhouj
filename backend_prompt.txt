@@ -1,0 +1,2996 @@
+
+==== ./backend/server.js ====
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+
+require('./db');
+
+const authRoutes = require('./routes/auth');
+const tripsRoutes = require('./routes/trips');
+const bookingsRoutes = require('./routes/bookings');
+const driversRoutes = require('./routes/drivers');
+
+const app = express();
+
+app.use(
+	cors({
+		origin: 'http://localhost:5500'
+	})
+);
+app.use(express.json());
+
+const logFormat = process.env.NODE_ENV === 'production' ? 'combined' : 'dev';
+app.use(
+	morgan(logFormat, {
+		skip: (req) => req.path === '/api/health'
+	})
+);
+
+app.use('/api/auth', authRoutes);
+app.use('/api/trips', tripsRoutes);
+app.use('/api/bookings', bookingsRoutes);
+app.use('/api/drivers', driversRoutes);
+
+app.get('/api/health', (req, res) => {
+	res.json({
+		status: 'ok',
+		message: 'Tariqi API is running',
+		timestamp: new Date().toISOString()
+	});
+});
+
+app.use((req, res) => {
+	res.status(404).json({ error: 'Route introuvable' });
+});
+
+app.use((err, req, res, next) => {
+	console.error(err.stack);
+	res.status(500).json({ error: 'Erreur serveur interne' });
+});
+
+const PORT = process.env.PORT;
+
+if (require.main === module) {
+	app.listen(PORT, () => {
+		console.log(`Tariqi API running on port ${PORT}`);
+	});
+}
+
+module.exports = app;
+
+==== ./backend/db.js ====
+require('dotenv').config();
+
+const Database = require('better-sqlite3');
+
+const db = new Database(process.env.DB_PATH);
+
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		phone TEXT,
+		email TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'passenger',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS trips (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		driver_id INTEGER NOT NULL REFERENCES users(id),
+		departure TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		date TEXT NOT NULL,
+		time TEXT NOT NULL,
+		seats INTEGER NOT NULL,
+		price REAL NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS bookings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		trip_id INTEGER NOT NULL REFERENCES trips(id),
+		passenger_id INTEGER NOT NULL REFERENCES users(id),
+		seats_booked INTEGER NOT NULL DEFAULT 1,
+		status TEXT NOT NULL DEFAULT 'confirmed',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS driver_applications (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		phone TEXT NOT NULL,
+		city TEXT NOT NULL,
+		car_model TEXT NOT NULL,
+		message TEXT,
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+`);
+
+console.log('Database initialized');
+
+module.exports = db;
+
+==== ./backend/middleware/authenticateToken.js ====
+const jwt = require('jsonwebtoken');
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token manquant' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(401).json({ error: 'Token invalide' });
+    }
+
+    req.user = user;
+    next();
+  });
+}
+
+function requireRole(...roles) {
+  return [authenticateToken, (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden: insufficient role' });
+    }
+
+    return next();
+  }];
+}
+
+module.exports = { authenticateToken, requireRole };
+
+==== ./backend/routes/auth.js ====
+const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+
+const db = require('../db');
+const { authenticateToken } = require('../middleware/authenticateToken');
+const { validate, registerSchema, loginSchema } = require('../validate');
+
+const router = express.Router();
+const SALT_ROUNDS = 10;
+const TOKEN_EXPIRES_IN = '7d';
+
+const authLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	max: 10,
+	message: { error: 'Too many requests, please try again later.' }
+});
+
+const userTableInfo = db.prepare('PRAGMA table_info(users)').all();
+const passwordColumn = userTableInfo.some((col) => col.name === 'password_hash')
+	? 'password_hash'
+	: 'password';
+
+router.post('/register', authLimiter, validate(registerSchema), (req, res) => {
+	try {
+		const { name, email, password } = req.body || {};
+
+		if (!name || !email || !password) {
+			return res.status(400).json({ error: 'name, email and password are required' });
+		}
+
+		const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+		if (existingUser) {
+			return res.status(409).json({ error: 'Email already in use' });
+		}
+
+		const passwordHash = bcrypt.hashSync(password, SALT_ROUNDS);
+		const insert = db.prepare(
+			`INSERT INTO users (name, email, ${passwordColumn}, role) VALUES (?, ?, ?, ?)`
+		);
+		const result = insert.run(name, email, passwordHash, 'passenger');
+
+		const payload = { id: result.lastInsertRowid, email, role: 'passenger' };
+		const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
+
+		return res.status(201).json({
+			token,
+			user: {
+				id: result.lastInsertRowid,
+				name,
+				email,
+				role: 'passenger'
+			}
+		});
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.post('/login', authLimiter, validate(loginSchema), (req, res) => {
+	try {
+		const { email, password } = req.body || {};
+
+		if (!email || !password) {
+			return res.status(400).json({ error: 'email and password are required' });
+		}
+
+		const user = db
+			.prepare(
+				`SELECT id, name, email, role, ${passwordColumn} AS password FROM users WHERE email = ?`
+			)
+			.get(email);
+
+		if (!user) {
+			return res.status(401).json({ error: 'Invalid email or password' });
+		}
+
+		const passwordMatches = bcrypt.compareSync(password, user.password);
+		if (!passwordMatches) {
+			return res.status(401).json({ error: 'Invalid email or password' });
+		}
+
+		const payload = { id: user.id, email: user.email, role: user.role };
+		const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
+
+		return res.status(200).json({
+			token,
+			user: {
+				id: user.id,
+				name: user.name,
+				email: user.email,
+				role: user.role
+			}
+		});
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.get('/me', authenticateToken, (req, res) => {
+	try {
+		const user = db
+			.prepare('SELECT id, name, email, role, created_at FROM users WHERE id = ?')
+			.get(req.user.id);
+
+		if (!user) {
+			return res.status(404).json({ error: 'User not found' });
+		}
+
+		return res.status(200).json({ user });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+module.exports = router;
+
+==== ./backend/routes/trips.js ====
+const express = require('express');
+
+const db = require('../db');
+const { requireRole } = require('../middleware/authenticateToken');
+const { validate, createTripSchema, updateTripSchema } = require('../validate');
+
+const router = express.Router();
+
+router.get('/', (req, res) => {
+	try {
+		const { origin, destination, date, page, limit } = req.query || {};
+		const pageNumber = Number.parseInt(page, 10);
+		const limitNumber = Number.parseInt(limit, 10);
+		const pageValue = Number.isInteger(pageNumber) && pageNumber > 0 ? pageNumber : 1;
+		const limitValue =
+			Number.isInteger(limitNumber) && limitNumber > 0 ? Math.min(limitNumber, 50) : 10;
+		const offset = (pageValue - 1) * limitValue;
+
+		const conditions = ["trips.status = 'active'"];
+		const params = [];
+
+		if (origin) {
+			conditions.push('LOWER(trips.origin) LIKE ?');
+			params.push(`%${String(origin).toLowerCase()}%`);
+		}
+
+		if (destination) {
+			conditions.push('LOWER(trips.destination) LIKE ?');
+			params.push(`%${String(destination).toLowerCase()}%`);
+		}
+
+		if (date) {
+			conditions.push('date(trips.departure_time) = ?');
+			params.push(date);
+		}
+
+		const countSql = `
+			SELECT COUNT(*) as total
+			FROM trips
+			WHERE ${conditions.join(' AND ')}
+		`;
+
+		const total = db.prepare(countSql).get(...params).total;
+
+		const sql = `
+			SELECT trips.*, users.name AS driver_name
+			FROM trips
+			JOIN users ON trips.driver_id = users.id
+			WHERE ${conditions.join(' AND ')}
+			LIMIT ? OFFSET ?
+		`;
+
+		const trips = db.prepare(sql).all(...params, limitValue, offset);
+		const totalPages = total === 0 ? 0 : Math.ceil(total / limitValue);
+
+		return res.status(200).json({
+			trips,
+			pagination: {
+				page: pageValue,
+				limit: limitValue,
+				total,
+				totalPages
+			}
+		});
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.get('/:id', (req, res) => {
+	try {
+		const tripId = Number.parseInt(req.params.id, 10);
+		if (!Number.isInteger(tripId)) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		const trip = db
+			.prepare(
+				`
+					SELECT trips.*, users.name AS driver_name
+					FROM trips
+					JOIN users ON trips.driver_id = users.id
+					WHERE trips.id = ?
+				`
+			)
+			.get(tripId);
+
+		if (!trip) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		return res.status(200).json({ trip });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.post('/', ...requireRole('driver'), validate(createTripSchema), (req, res) => {
+	try {
+		const { origin, destination, departure_time, available_seats, price } = req.body || {};
+
+		if (!origin || !destination || !departure_time || available_seats == null || price == null) {
+			return res.status(400).json({ error: 'All fields are required' });
+		}
+
+		const seatsValue = Number(available_seats);
+		const priceValue = Number(price);
+		const seatsValid = Number.isInteger(seatsValue) && seatsValue > 0;
+		const priceValid = Number.isFinite(priceValue) && priceValue > 0;
+
+		if (!seatsValid || !priceValid) {
+			return res
+				.status(400)
+				.json({ error: 'available_seats must be a positive integer and price must be a positive number' });
+		}
+
+		const insert = db.prepare(
+			`
+				INSERT INTO trips (driver_id, origin, destination, departure_time, available_seats, price, status)
+				VALUES (?, ?, ?, ?, ?, ?, 'active')
+			`
+		);
+
+		const result = insert.run(
+			req.user.id,
+			origin,
+			destination,
+			departure_time,
+			seatsValue,
+			priceValue
+		);
+
+		const trip = db
+			.prepare(
+				`
+					SELECT id, driver_id, origin, destination, departure_time, available_seats, price, status, created_at
+					FROM trips
+					WHERE id = ?
+				`
+			)
+			.get(result.lastInsertRowid);
+
+		return res.status(201).json({ trip });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.put('/:id', ...requireRole('driver'), validate(updateTripSchema), (req, res) => {
+	try {
+		const tripId = Number.parseInt(req.params.id, 10);
+		if (!Number.isInteger(tripId)) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
+		if (!trip) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		if (trip.driver_id !== req.user.id) {
+			return res.status(403).json({ error: 'Forbidden: you do not own this trip' });
+		}
+
+		const updates = [];
+		const params = [];
+
+		if (Object.prototype.hasOwnProperty.call(req.body || {}, 'departure_time')) {
+			updates.push('departure_time = ?');
+			params.push(req.body.departure_time);
+		}
+
+		if (Object.prototype.hasOwnProperty.call(req.body || {}, 'available_seats')) {
+			const seatsValue = Number(req.body.available_seats);
+			const seatsValid = Number.isInteger(seatsValue) && seatsValue > 0;
+			if (!seatsValid) {
+				return res
+					.status(400)
+					.json({ error: 'available_seats must be a positive integer and price must be a positive number' });
+			}
+
+			updates.push('available_seats = ?');
+			params.push(seatsValue);
+		}
+
+		if (Object.prototype.hasOwnProperty.call(req.body || {}, 'price')) {
+			const priceValue = Number(req.body.price);
+			const priceValid = Number.isFinite(priceValue) && priceValue > 0;
+			if (!priceValid) {
+				return res
+					.status(400)
+					.json({ error: 'available_seats must be a positive integer and price must be a positive number' });
+			}
+
+			updates.push('price = ?');
+			params.push(priceValue);
+		}
+
+		if (Object.prototype.hasOwnProperty.call(req.body || {}, 'status')) {
+			updates.push('status = ?');
+			params.push(req.body.status);
+		}
+
+		if (updates.length === 0) {
+			return res.status(400).json({ error: 'No valid fields to update' });
+		}
+
+		params.push(tripId);
+		db.prepare(`UPDATE trips SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+		const updatedTrip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
+		return res.status(200).json({ trip: updatedTrip });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.delete('/:id', ...requireRole('driver'), (req, res) => {
+	try {
+		const tripId = Number.parseInt(req.params.id, 10);
+		if (!Number.isInteger(tripId)) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
+		if (!trip) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		if (trip.driver_id !== req.user.id) {
+			return res.status(403).json({ error: 'Forbidden: you do not own this trip' });
+		}
+
+		db.prepare("UPDATE trips SET status = 'cancelled' WHERE id = ?").run(tripId);
+
+		return res.status(200).json({ message: 'Trip cancelled successfully' });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+module.exports = router;
+
+==== ./backend/routes/bookings.js ====
+const express = require('express');
+
+const db = require('../db');
+const { authenticateToken } = require('../middleware/authenticateToken');
+const { validate, bookingSchema } = require('../validate');
+
+const router = express.Router();
+
+router.post('/', authenticateToken, validate(bookingSchema), (req, res) => {
+	try {
+		const { trip_id } = req.body || {};
+
+		if (!trip_id) {
+			return res.status(400).json({ error: 'trip_id is required' });
+		}
+
+		const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(trip_id);
+		if (!trip) {
+			return res.status(404).json({ error: 'Trip not found' });
+		}
+
+		if (trip.status !== 'active') {
+			return res.status(400).json({ error: 'Trip is not available for booking' });
+		}
+
+		if (trip.available_seats <= 0) {
+			return res.status(400).json({ error: 'No seats available' });
+		}
+
+		const existingBooking = db
+			.prepare(
+				'SELECT id FROM bookings WHERE trip_id = ? AND user_id = ? AND status != "cancelled"'
+			)
+			.get(trip_id, req.user.id);
+
+		if (existingBooking) {
+			return res.status(409).json({ error: 'You have already booked this trip' });
+		}
+
+		const bookTrip = db.transaction((targetTripId, userId) => {
+			const insert = db.prepare(
+				'INSERT INTO bookings (trip_id, user_id, status) VALUES (?, ?, "confirmed")'
+			);
+			const result = insert.run(targetTripId, userId);
+
+			db.prepare('UPDATE trips SET available_seats = available_seats - 1 WHERE id = ?').run(
+				targetTripId
+			);
+
+			return result.lastInsertRowid;
+		});
+
+		const bookingId = bookTrip(trip_id, req.user.id);
+		const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+
+		return res.status(201).json({ booking });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.get('/my', authenticateToken, (req, res) => {
+	try {
+		const bookings = db
+			.prepare(
+				`
+					SELECT bookings.*, trips.origin, trips.destination,
+								 trips.departure_time, trips.price,
+								 trips.status AS trip_status
+					FROM bookings
+					JOIN trips ON bookings.trip_id = trips.id
+					WHERE bookings.user_id = ?
+					ORDER BY bookings.created_at DESC
+				`
+			)
+			.all(req.user.id);
+
+		return res.status(200).json({ bookings });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.delete('/:id', authenticateToken, (req, res) => {
+	try {
+		const bookingId = Number.parseInt(req.params.id, 10);
+		if (!Number.isInteger(bookingId)) {
+			return res.status(404).json({ error: 'Booking not found' });
+		}
+
+		const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
+		if (!booking) {
+			return res.status(404).json({ error: 'Booking not found' });
+		}
+
+		if (booking.user_id !== req.user.id) {
+			return res.status(403).json({ error: 'Forbidden: this is not your booking' });
+		}
+
+		if (booking.status === 'cancelled') {
+			return res.status(400).json({ error: 'Booking is already cancelled' });
+		}
+
+		const cancelBooking = db.transaction((targetBookingId, tripId) => {
+			db.prepare('UPDATE bookings SET status = "cancelled" WHERE id = ?').run(targetBookingId);
+			db.prepare('UPDATE trips SET available_seats = available_seats + 1 WHERE id = ?').run(
+				tripId
+			);
+		});
+
+		cancelBooking(bookingId, booking.trip_id);
+
+		return res.status(200).json({ message: 'Booking cancelled successfully' });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+module.exports = router;
+
+==== ./backend/routes/drivers.js ====
+const express = require('express');
+
+const db = require('../db');
+const { authenticateToken, requireRole } = require('../middleware/authenticateToken');
+const { validate, applyDriverSchema, reviewApplicationSchema } = require('../validate');
+
+const router = express.Router();
+
+router.post('/apply', authenticateToken, validate(applyDriverSchema), (req, res) => {
+	try {
+		const { license_number, vehicle_info } = req.body || {};
+
+		if (!license_number || !vehicle_info) {
+			return res.status(400).json({ error: 'license_number and vehicle_info are required' });
+		}
+
+		const existingApplication = db
+			.prepare(
+				"SELECT id FROM driver_applications WHERE user_id = ? AND status IN ('pending', 'approved')"
+			)
+			.get(req.user.id);
+
+		if (existingApplication) {
+			return res
+				.status(409)
+				.json({ error: 'You already have a pending or approved application' });
+		}
+
+		const insert = db.prepare(
+			`
+				INSERT INTO driver_applications (user_id, license_number, vehicle_info, status)
+				VALUES (?, ?, ?, 'pending')
+			`
+		);
+
+		const result = insert.run(req.user.id, license_number, vehicle_info);
+		const application = db
+			.prepare('SELECT * FROM driver_applications WHERE id = ?')
+			.get(result.lastInsertRowid);
+
+		return res.status(201).json({ application });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.get('/applications', ...requireRole('admin'), (req, res) => {
+	try {
+		const { status, page, limit } = req.query || {};
+		const pageNumber = Number.parseInt(page, 10);
+		const limitNumber = Number.parseInt(limit, 10);
+		const pageValue = Number.isInteger(pageNumber) && pageNumber > 0 ? pageNumber : 1;
+		const limitValue =
+			Number.isInteger(limitNumber) && limitNumber > 0 ? Math.min(limitNumber, 50) : 10;
+		const offset = (pageValue - 1) * limitValue;
+		const params = [];
+		let whereClause = '';
+
+		if (status) {
+			whereClause = 'WHERE da.status = ?';
+			params.push(status);
+		}
+
+		const countSql = `
+			SELECT COUNT(*) as total
+			FROM driver_applications da
+			${whereClause}
+		`;
+
+		const total = db.prepare(countSql).get(...params).total;
+
+		const sql = `
+			SELECT da.*, u.name AS applicant_name, u.email AS applicant_email
+			FROM driver_applications da
+			JOIN users u ON da.user_id = u.id
+			${whereClause}
+			ORDER BY da.created_at DESC
+			LIMIT ? OFFSET ?
+		`;
+
+		const applications = db.prepare(sql).all(...params, limitValue, offset);
+		const totalPages = total === 0 ? 0 : Math.ceil(total / limitValue);
+		return res.status(200).json({
+			applications,
+			pagination: {
+				page: pageValue,
+				limit: limitValue,
+				total,
+				totalPages
+			}
+		});
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+});
+
+router.patch(
+	'/applications/:id',
+	...requireRole('admin'),
+	validate(reviewApplicationSchema),
+	(req, res) => {
+	try {
+		const { status } = req.body || {};
+		if (status !== 'approved' && status !== 'rejected') {
+			return res.status(400).json({ error: "status must be 'approved' or 'rejected'" });
+		}
+
+		const applicationId = Number.parseInt(req.params.id, 10);
+		if (!Number.isInteger(applicationId)) {
+			return res.status(404).json({ error: 'Application not found' });
+		}
+
+		const application = db
+			.prepare('SELECT id, user_id, status FROM driver_applications WHERE id = ?')
+			.get(applicationId);
+
+		if (!application) {
+			return res.status(404).json({ error: 'Application not found' });
+		}
+
+		if (status === 'approved') {
+			const approve = db.transaction((appId, userId) => {
+				db.prepare("UPDATE driver_applications SET status = 'approved' WHERE id = ?").run(appId);
+				db.prepare("UPDATE users SET role = 'driver' WHERE id = ?").run(userId);
+			});
+			approve(application.id, application.user_id);
+
+			return res.status(200).json({
+				message: 'Application approved',
+				application: {
+					id: application.id,
+					user_id: application.user_id,
+					status: 'approved'
+				}
+			});
+		}
+
+		db.prepare("UPDATE driver_applications SET status = 'rejected' WHERE id = ?").run(
+			application.id
+		);
+
+		return res.status(200).json({
+			message: 'Application rejected',
+			application: {
+				id: application.id,
+				user_id: application.user_id,
+				status: 'rejected'
+			}
+		});
+	} catch (error) {
+		console.error(error);
+		return res.status(500).json({ error: 'Internal server error' });
+	}
+	}
+);
+
+module.exports = router;
+
+==== ./backend/validate.js ====
+const { z } = require('zod');
+
+function validate(schema) {
+  return (req, res, next) => {
+    const result = schema.safeParse(req.body);
+
+    if (!result.success) {
+      const details = result.error.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message
+      }));
+
+      return res.status(400).json({
+        error: 'Validation failed',
+        details
+      });
+    }
+
+    return next();
+  };
+}
+
+const registerSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(6)
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
+
+const createTripSchema = z.object({
+  origin: z.string().min(1),
+  destination: z.string().min(1),
+  departure_time: z.string().min(1),
+  available_seats: z.coerce.number().int().positive(),
+  price: z.coerce.number().positive()
+});
+
+const updateTripSchema = z.object({
+  departure_time: z.string().min(1).optional(),
+  available_seats: z.coerce.number().int().positive().optional(),
+  price: z.coerce.number().positive().optional(),
+  status: z.enum(['active', 'cancelled']).optional()
+});
+
+const bookingSchema = z.object({
+  trip_id: z.coerce.number().int().positive()
+});
+
+const applyDriverSchema = z.object({
+  license_number: z.string().min(1),
+  vehicle_info: z.string().min(1)
+});
+
+const reviewApplicationSchema = z.object({
+  status: z.enum(['approved', 'rejected'])
+});
+
+module.exports = {
+  validate,
+  registerSchema,
+  loginSchema,
+  createTripSchema,
+  updateTripSchema,
+  bookingSchema,
+  applyDriverSchema,
+  reviewApplicationSchema
+};
+
+==== ./auth-ui.js ====
+(function () {
+  let initialized = false;
+
+  function initAuthUI() {
+    if (initialized) return;
+
+    const modal = document.getElementById('auth-modal');
+    if (!modal) {
+      setTimeout(initAuthUI, 80);
+      return;
+    }
+
+    initialized = true;
+
+    const card = modal.querySelector('.auth-card');
+    const closeButton = modal.querySelector('.auth-close');
+    const tabs = Array.from(modal.querySelectorAll('.auth-tab'));
+    const forms = Array.from(modal.querySelectorAll('.auth-form'));
+    const globalError = modal.querySelector('.auth-global-error');
+    let activeTab = 'login';
+    let lastFocused = null;
+
+    function setGlobalError(message) {
+      if (!globalError) return;
+      if (message) {
+        globalError.textContent = message;
+        globalError.classList.add('is-visible');
+      } else {
+        globalError.textContent = '';
+        globalError.classList.remove('is-visible');
+      }
+    }
+
+    function setFieldError(fieldEl, message) {
+      if (!fieldEl) return;
+      const errorText = fieldEl.querySelector('.auth-error-text');
+      fieldEl.classList.add('has-error');
+      if (errorText) {
+        errorText.textContent = message || '';
+      }
+    }
+
+    function clearFieldError(fieldEl) {
+      if (!fieldEl) return;
+      fieldEl.classList.remove('has-error');
+      const errorText = fieldEl.querySelector('.auth-error-text');
+      if (errorText) {
+        errorText.textContent = '';
+      }
+    }
+
+    function resetForm(form) {
+      if (!form) return;
+      form.reset();
+      form.querySelectorAll('.auth-field').forEach(clearFieldError);
+      const toggles = form.querySelectorAll('.auth-toggle');
+      toggles.forEach((toggle) => {
+        toggle.classList.remove('is-visible');
+        toggle.setAttribute('aria-label', 'Afficher le mot de passe');
+      });
+      const passwordInputs = form.querySelectorAll('[data-password]');
+      passwordInputs.forEach((input) => {
+        input.type = 'password';
+      });
+      const strength = form.querySelector('.auth-strength');
+      if (strength) {
+        strength.classList.remove('visible', 'weak', 'medium', 'strong');
+        const label = strength.querySelector('.auth-strength-label');
+        if (label) label.textContent = '';
+      }
+    }
+
+    function setActiveTab(targetTab) {
+      activeTab = targetTab;
+      tabs.forEach((tab) => {
+        const isActive = tab.dataset.tab === targetTab;
+        tab.classList.toggle('is-active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+      });
+
+      forms.forEach((form) => {
+        const isActive = form.dataset.form === targetTab;
+        form.classList.toggle('is-active', isActive);
+        resetForm(form);
+      });
+
+      setGlobalError('');
+    }
+
+    function openModal() {
+      lastFocused = document.activeElement;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('auth-modal-open');
+
+      const activeForm = forms.find((form) => form.dataset.form === activeTab);
+      const firstInput = activeForm ? activeForm.querySelector('input') : null;
+      if (firstInput) {
+        setTimeout(() => firstInput.focus(), 10);
+      }
+    }
+
+    function closeModal() {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('auth-modal-open');
+      forms.forEach(resetForm);
+      setGlobalError('');
+
+      if (lastFocused && typeof lastFocused.focus === 'function') {
+        lastFocused.focus();
+      }
+    }
+
+    function trapFocus(event) {
+      if (event.key !== 'Tab' || !modal.classList.contains('open')) return;
+
+      const focusable = Array.from(
+        modal.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute('disabled'));
+
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-auth-trigger]');
+      if (trigger) {
+        event.preventDefault();
+        openModal();
+
+        const hamburger = document.querySelector('.hamburger');
+        const mobileMenu = document.querySelector('.mobile-menu');
+        if (hamburger && mobileMenu && mobileMenu.classList.contains('open')) {
+          hamburger.classList.remove('open');
+          mobileMenu.classList.remove('open');
+          hamburger.setAttribute('aria-expanded', 'false');
+        }
+      }
+    });
+
+    closeButton.addEventListener('click', closeModal);
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && modal.classList.contains('open')) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', trapFocus);
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        setActiveTab(tab.dataset.tab);
+      });
+    });
+
+    modal.querySelectorAll('.auth-toggle').forEach((toggle) => {
+      toggle.addEventListener('click', () => {
+        const input = toggle.closest('.auth-input-wrap').querySelector('input');
+        const isVisible = input.type === 'password';
+        input.type = isVisible ? 'text' : 'password';
+        toggle.classList.toggle('is-visible', isVisible);
+        toggle.setAttribute(
+          'aria-label',
+          isVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
+        );
+        input.classList.add('auth-password');
+      });
+    });
+
+    function setLoading(button, isLoading) {
+      if (!button) return;
+      const label = button.querySelector('.auth-submit-label');
+      const loadingText = button.getAttribute('data-loading-text');
+      if (isLoading) {
+        button.classList.add('is-loading');
+        button.disabled = true;
+        if (label && loadingText) label.textContent = loadingText;
+      } else {
+        button.classList.remove('is-loading');
+        button.disabled = false;
+        if (label) {
+          label.textContent = button.getAttribute('data-default-label') || label.textContent;
+        }
+      }
+    }
+
+    function validateEmail(value) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).toLowerCase());
+    }
+
+    function updateStrength(password, strengthEl) {
+      if (!strengthEl) return;
+      const label = strengthEl.querySelector('.auth-strength-label');
+      strengthEl.classList.remove('weak', 'medium', 'strong', 'visible');
+
+      if (!password || password.length < 6) {
+        if (label) label.textContent = '';
+        return;
+      }
+
+      const hasLetter = /[a-zA-Z]/.test(password);
+      const hasNumber = /\d/.test(password);
+      const hasSymbol = /[^a-zA-Z0-9]/.test(password);
+      const hasMix = hasLetter && hasNumber;
+
+      strengthEl.classList.add('visible');
+
+      if (password.length >= 8 && hasMix && hasSymbol) {
+        strengthEl.classList.add('strong');
+        if (label) label.textContent = 'Fort';
+      } else if (hasMix) {
+        strengthEl.classList.add('medium');
+        if (label) label.textContent = 'Moyen';
+      } else {
+        strengthEl.classList.add('weak');
+        if (label) label.textContent = 'Faible';
+      }
+    }
+
+    const registerPassword = modal.querySelector('#register-password');
+    const strength = modal.querySelector('.auth-strength');
+    if (registerPassword && strength) {
+      registerPassword.addEventListener('input', () => {
+        updateStrength(registerPassword.value, strength);
+      });
+    }
+
+    const loginForm = modal.querySelector('[data-form="login"]');
+    const registerForm = modal.querySelector('[data-form="register"]');
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setGlobalError('');
+
+      const emailField = loginForm.querySelector('[data-field="email"]');
+      const passwordField = loginForm.querySelector('[data-field="password"]');
+      const emailInput = loginForm.querySelector('#login-email');
+      const passwordInput = loginForm.querySelector('#login-password');
+      const submitButton = loginForm.querySelector('.auth-submit');
+
+      clearFieldError(emailField);
+      clearFieldError(passwordField);
+
+      let hasError = false;
+      if (!validateEmail(emailInput.value)) {
+        setFieldError(emailField, 'Adresse email invalide.');
+        hasError = true;
+      }
+
+      if (!passwordInput.value) {
+        setFieldError(passwordField, 'Mot de passe requis.');
+        hasError = true;
+      }
+
+      if (hasError) return;
+
+      setLoading(submitButton, true);
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailInput.value.trim(),
+            password: passwordInput.value
+          })
+        });
+
+        if (response.status === 401) {
+          setGlobalError('Email ou mot de passe incorrect.');
+          setLoading(submitButton, false);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setGlobalError('Une erreur est survenue. Réessayez.');
+          setLoading(submitButton, false);
+          return;
+        }
+
+        if (data && data.token) {
+          localStorage.setItem('tariqi_token', data.token);
+          closeModal();
+          updateNavbarState();
+        }
+      } catch (error) {
+        setGlobalError('Une erreur est survenue. Réessayez.');
+      } finally {
+        setLoading(submitButton, false);
+      }
+    });
+
+    registerForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setGlobalError('');
+
+      const nameField = registerForm.querySelector('[data-field="name"]');
+      const emailField = registerForm.querySelector('[data-field="email"]');
+      const passwordField = registerForm.querySelector('[data-field="password"]');
+      const confirmField = registerForm.querySelector('[data-field="confirm"]');
+      const nameInput = registerForm.querySelector('#register-name');
+      const emailInput = registerForm.querySelector('#register-email');
+      const passwordInput = registerForm.querySelector('#register-password');
+      const confirmInput = registerForm.querySelector('#register-confirm');
+      const submitButton = registerForm.querySelector('.auth-submit');
+
+      [nameField, emailField, passwordField, confirmField].forEach(clearFieldError);
+
+      let hasError = false;
+      if (!nameInput.value.trim()) {
+        setFieldError(nameField, 'Nom requis.');
+        hasError = true;
+      }
+
+      if (!validateEmail(emailInput.value)) {
+        setFieldError(emailField, 'Adresse email invalide.');
+        hasError = true;
+      }
+
+      if (!passwordInput.value || passwordInput.value.length < 6) {
+        setFieldError(passwordField, 'Le mot de passe doit contenir au moins 6 caractères.');
+        hasError = true;
+      }
+
+      if (passwordInput.value !== confirmInput.value) {
+        setFieldError(confirmField, 'Les mots de passe ne correspondent pas.');
+        hasError = true;
+      }
+
+      if (hasError) return;
+
+      setLoading(submitButton, true);
+
+      try {
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: nameInput.value.trim(),
+            email: emailInput.value.trim(),
+            password: passwordInput.value
+          })
+        });
+
+        if (response.status === 409) {
+          setFieldError(emailField, 'Cette adresse email est déjà utilisée.');
+          setLoading(submitButton, false);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (response.status === 400 && data && Array.isArray(data.details)) {
+          data.details.forEach((detail) => {
+            const field = registerForm.querySelector(`[data-field="${detail.field}"]`);
+            if (field) {
+              setFieldError(field, detail.message);
+            }
+          });
+          setLoading(submitButton, false);
+          return;
+        }
+
+        if (!response.ok) {
+          setGlobalError('Une erreur est survenue. Réessayez.');
+          setLoading(submitButton, false);
+          return;
+        }
+
+        if (data && data.token) {
+          localStorage.setItem('tariqi_token', data.token);
+          closeModal();
+          updateNavbarState();
+        }
+      } catch (error) {
+        setGlobalError('Une erreur est survenue. Réessayez.');
+      } finally {
+        setLoading(submitButton, false);
+      }
+    });
+
+    async function fetchUser(token) {
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.user || null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function buildUserMenu(user) {
+      const navActions = document.querySelector('.nav-actions');
+      if (!navActions) return;
+
+      const existing = navActions.querySelector('.auth-user');
+      if (existing) existing.remove();
+
+      const authUser = document.createElement('div');
+      authUser.className = 'auth-user';
+
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'auth-user-trigger';
+      trigger.setAttribute('aria-haspopup', 'true');
+      trigger.setAttribute('aria-expanded', 'false');
+
+      const initial = document.createElement('span');
+      initial.className = 'auth-user-initial';
+      initial.textContent = user.name ? user.name.trim().charAt(0).toUpperCase() : '?';
+
+      const name = document.createElement('span');
+      name.className = 'auth-user-name';
+      const displayName = user.name ? user.name.trim() : 'Utilisateur';
+      name.textContent = displayName.length > 14 ? `${displayName.slice(0, 14)}…` : displayName;
+
+      const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      chevron.setAttribute('viewBox', '0 0 12 12');
+      chevron.setAttribute('width', '12');
+      chevron.setAttribute('height', '12');
+      chevron.classList.add('auth-user-chevron');
+      chevron.innerHTML = '<path fill="currentColor" d="M2.1 4.2 6 8l3.9-3.8 1 1L6 10.2 1.1 5.2z" />';
+
+      trigger.appendChild(initial);
+      trigger.appendChild(name);
+      trigger.appendChild(chevron);
+
+      const menu = document.createElement('div');
+      menu.className = 'auth-user-menu';
+
+      const profile = document.createElement('a');
+      profile.href = '/profil.html';
+      profile.textContent = 'Mon profil';
+
+      const trips = document.createElement('a');
+      trips.href = '/mes-trajets.html';
+      trips.textContent = 'Mes trajets';
+
+      const divider = document.createElement('div');
+      divider.className = 'auth-user-divider';
+
+      const logoutButton = document.createElement('button');
+      logoutButton.type = 'button';
+      logoutButton.textContent = 'Se déconnecter';
+      logoutButton.addEventListener('click', () => {
+        logout();
+      });
+
+      menu.appendChild(profile);
+      menu.appendChild(trips);
+      menu.appendChild(divider);
+      menu.appendChild(logoutButton);
+
+      authUser.appendChild(trigger);
+      authUser.appendChild(menu);
+
+      navActions.insertBefore(authUser, navActions.firstChild);
+
+      function closeMenu() {
+        menu.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+
+      trigger.addEventListener('click', () => {
+        const isOpen = menu.classList.contains('open');
+        menu.classList.toggle('open', !isOpen);
+        trigger.setAttribute('aria-expanded', String(!isOpen));
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!authUser.contains(event.target)) {
+          closeMenu();
+        }
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeMenu();
+        }
+      });
+    }
+
+    async function updateNavbarState() {
+      const token = localStorage.getItem('tariqi_token');
+      const navActions = document.querySelector('.nav-actions');
+      if (!navActions) {
+        setTimeout(updateNavbarState, 80);
+        return;
+      }
+      const authTriggers = document.querySelectorAll('[data-auth-trigger]');
+
+      if (!token) {
+        authTriggers.forEach((el) => el.classList.remove('auth-hidden'));
+        const existing = document.querySelector('.auth-user');
+        if (existing) existing.remove();
+        return;
+      }
+
+      const user = await fetchUser(token);
+      if (!user) {
+        localStorage.removeItem('tariqi_token');
+        authTriggers.forEach((el) => el.classList.remove('auth-hidden'));
+        const existing = document.querySelector('.auth-user');
+        if (existing) existing.remove();
+        return;
+      }
+
+      authTriggers.forEach((el) => el.classList.add('auth-hidden'));
+      buildUserMenu(user);
+    }
+
+    function logout() {
+      localStorage.removeItem('tariqi_token');
+      updateNavbarState();
+
+      const path = window.location.pathname;
+      if (path && !path.endsWith('index.html') && path !== '/') {
+        window.location.href = 'index.html';
+      }
+    }
+
+    window.updateNavbarState = updateNavbarState;
+    window.logout = logout;
+
+    updateNavbarState();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAuthUI);
+  } else {
+    initAuthUI();
+  }
+})();
+
+==== ./js/components.js ====
+// Note: this requires a local HTTP server (fetch won't load local files from file://).
+async function loadComponent(host, path) {
+  if (!host || !path) return;
+
+  try {
+    const response = await fetch(path);
+    if (!response.ok) {
+      throw new Error(`Impossible de charger ${path} (${response.status})`);
+    }
+
+    const html = await response.text();
+    host.innerHTML = html;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function loadAllComponents() {
+  const hosts = Array.from(document.querySelectorAll("[data-component]"));
+
+  await Promise.all(hosts.map((host) => loadComponent(host, host.getAttribute("data-component"))));
+}
+
+window.loadAllComponents = loadAllComponents;
+
+==== ./script.js ====
+function initHeader() {
+  const header = document.getElementById('site-header');
+  const hamburger = document.querySelector('.hamburger');
+  const mobileMenu = document.querySelector('.mobile-menu');
+  const downloadWrapper = document.querySelector('.download-wrapper');
+  const downloadTrigger = document.querySelector('.download-trigger');
+  const downloadDropdown = document.getElementById('download-dropdown');
+  const mobileDownloadTrigger = document.querySelector('.mobile-download-trigger');
+  const mobileDownloadPanel = document.getElementById('mobile-download-panel');
+  let hoverOpenTimeout;
+  let hoverCloseTimeout;
+
+  if (header) {
+    window.addEventListener('scroll', () => {
+      header.classList.toggle('scrolled', window.scrollY > 80);
+    });
+  }
+
+  if (hamburger && mobileMenu) {
+    hamburger.addEventListener('click', () => {
+      const isOpen = hamburger.classList.toggle('open');
+      mobileMenu.classList.toggle('open');
+      hamburger.setAttribute('aria-expanded', String(isOpen));
+
+      if (!isOpen && mobileDownloadTrigger && mobileDownloadPanel) {
+        mobileDownloadPanel.classList.remove('open');
+        mobileDownloadTrigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    mobileMenu.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => {
+        hamburger.classList.remove('open');
+        mobileMenu.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
+
+        if (mobileDownloadTrigger && mobileDownloadPanel) {
+          mobileDownloadPanel.classList.remove('open');
+          mobileDownloadTrigger.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+  }
+
+  if (mobileDownloadTrigger && mobileDownloadPanel) {
+    mobileDownloadTrigger.addEventListener('click', () => {
+      const isOpen = mobileDownloadPanel.classList.toggle('open');
+      mobileDownloadTrigger.setAttribute('aria-expanded', String(isOpen));
+    });
+  }
+
+  if (downloadWrapper && downloadTrigger && downloadDropdown) {
+    const openDropdown = () => {
+      downloadDropdown.classList.add('open');
+      downloadTrigger.setAttribute('aria-expanded', 'true');
+    };
+
+    const closeDropdown = () => {
+      downloadDropdown.classList.remove('open');
+      downloadTrigger.setAttribute('aria-expanded', 'false');
+    };
+
+    downloadTrigger.addEventListener('click', () => {
+      const isOpen = downloadDropdown.classList.contains('open');
+      if (isOpen) {
+        closeDropdown();
+      } else {
+        openDropdown();
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!downloadWrapper.contains(event.target)) {
+        closeDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeDropdown();
+      }
+    });
+
+    if (window.matchMedia('(hover: hover)').matches) {
+      downloadWrapper.addEventListener('mouseenter', () => {
+        clearTimeout(hoverCloseTimeout);
+        hoverOpenTimeout = setTimeout(openDropdown, 150);
+      });
+
+      downloadWrapper.addEventListener('mouseleave', () => {
+        clearTimeout(hoverOpenTimeout);
+        hoverCloseTimeout = setTimeout(closeDropdown, 300);
+      });
+    }
+  }
+}
+
+function initHero() {
+  const hero = document.getElementById('hero');
+  const heroOverlay = hero ? hero.querySelector('.hero-overlay') : null;
+  const heroVeil = hero ? hero.querySelector('.hero-top-veil') : null;
+  const searchBar = document.getElementById('search-bar');
+
+  if (hero && heroOverlay && searchBar) {
+    window.addEventListener(
+      'scroll',
+      () => {
+        const scrollY = window.scrollY;
+        const heroHeight = hero.offsetHeight;
+        const progress = Math.min(scrollY / heroHeight, 1);
+
+        heroOverlay.style.opacity = String(Math.max(1 - progress * 1.4, 0.15));
+        hero.style.backgroundPositionY = `calc(50% + ${scrollY * 0.4}px)`;
+
+        if (progress > 0.28) {
+          searchBar.classList.add('visible');
+        } else {
+          searchBar.classList.remove('visible');
+        }
+
+        if (heroVeil) {
+          if (progress > 0.15) {
+            heroVeil.classList.add('hidden');
+          } else {
+            heroVeil.classList.remove('hidden');
+          }
+        }
+      },
+      { passive: true }
+    );
+  }
+}
+
+function initSearchBarNavigation() {
+  const searchBar = document.getElementById('search-bar');
+  if (!searchBar) return;
+
+  const submitButton = searchBar.querySelector('.search-submit');
+  const fromInput = document.getElementById('input-depart');
+  const toInput = document.getElementById('input-destination');
+  const dateInput = document.getElementById('input-date');
+
+  if (!submitButton) return;
+
+  submitButton.addEventListener('click', () => {
+    const params = new URLSearchParams();
+    if (fromInput && fromInput.value.trim()) {
+      params.set('from', fromInput.value.trim());
+    }
+    if (toInput && toInput.value.trim()) {
+      params.set('to', toInput.value.trim());
+    }
+    if (dateInput && dateInput.value) {
+      params.set('date', dateInput.value);
+    }
+
+    const query = params.toString();
+    window.location.href = query ? `search.html?${query}` : 'search.html';
+  });
+}
+
+function initDestinations() {
+  const track = document.getElementById('dest-track');
+  const prevBtn = document.getElementById('dest-prev');
+  const nextBtn = document.getElementById('dest-next');
+  const SCROLL_AMOUNT = 290;
+
+  if (track && prevBtn && nextBtn) {
+    prevBtn.addEventListener('click', () => {
+      track.scrollBy({ left: -SCROLL_AMOUNT, behavior: 'smooth' });
+    });
+
+    nextBtn.addEventListener('click', () => {
+      track.scrollBy({ left: SCROLL_AMOUNT, behavior: 'smooth' });
+    });
+
+    function updateArrows() {
+      const atStart = track.scrollLeft <= 10;
+      prevBtn.style.opacity = atStart ? '0.35' : '1';
+      prevBtn.style.pointerEvents = atStart ? 'none' : 'all';
+
+      const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 10;
+      nextBtn.style.opacity = atEnd ? '0.35' : '1';
+      nextBtn.style.pointerEvents = atEnd ? 'none' : 'all';
+    }
+
+    track.addEventListener('scroll', updateArrows, { passive: true });
+    window.addEventListener('resize', updateArrows);
+    updateArrows();
+  }
+
+  document.querySelectorAll('.dest-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const city = card.dataset.city;
+      const destInput = document.getElementById('input-destination');
+      const searchBarElement = document.getElementById('search-bar');
+
+      if (destInput && city) {
+        destInput.value = city;
+        if (searchBarElement) {
+          searchBarElement.classList.add('visible');
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+  });
+}
+
+function initDestinationPrices() {
+  const cards = Array.from(document.querySelectorAll('.dest-card'));
+  if (!cards.length) return;
+
+  const requests = cards.map((card) => {
+    const cityHeading = card.querySelector('h3');
+    const city = (card.dataset.city || (cityHeading ? cityHeading.textContent : '')).trim();
+    if (!city) return Promise.resolve();
+
+    const cardBody = card.querySelector('.dest-card-body') || card;
+    let priceEl = card.querySelector('.dest-price') || card.querySelector('.card-min-price');
+
+    if (!priceEl) {
+      priceEl = document.createElement('p');
+      priceEl.className = 'card-min-price';
+      cardBody.appendChild(priceEl);
+    }
+
+    const originalText = priceEl.textContent ? priceEl.textContent.trim() : '';
+    priceEl.classList.remove('is-live', 'is-empty');
+    priceEl.classList.add('is-loading');
+    priceEl.textContent = '';
+
+    const url = `/api/trips?destination=${encodeURIComponent(city)}&limit=50`;
+
+    return fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Request failed');
+        }
+        return response.json();
+      })
+      .then((data) => {
+        priceEl.classList.remove('is-loading');
+        const trips = data && Array.isArray(data.trips) ? data.trips : [];
+        const prices = trips
+          .map((trip) => Number(trip.price))
+          .filter((price) => Number.isFinite(price));
+
+        if (prices.length === 0) {
+          priceEl.textContent = 'Aucun trajet disponible';
+          priceEl.classList.add('is-empty');
+          priceEl.classList.remove('is-live');
+          return;
+        }
+
+        const minPrice = Math.min(...prices);
+        priceEl.textContent = `À partir de ${minPrice} DT`;
+        priceEl.classList.add('is-live');
+        priceEl.classList.remove('is-empty');
+      })
+      .catch(() => {
+        priceEl.classList.remove('is-loading');
+        priceEl.textContent = originalText;
+      });
+  });
+
+  Promise.all(requests).catch(() => {});
+}
+
+window.initHeader = initHeader;
+window.initHero = initHero;
+window.initDestinations = initDestinations;
+window.initDestinationPrices = initDestinationPrices;
+
+/* === ANIMATIONS JS === */
+function countUp(el) {
+  const target = parseInt(el.dataset.target, 10);
+  if (Number.isNaN(target)) return;
+
+  const duration = 1200;
+  const step = 16;
+  const increment = target / (duration / step);
+  let current = 0;
+
+  const timer = setInterval(() => {
+    current += increment;
+    if (current >= target) {
+      el.textContent = String(target);
+      clearInterval(timer);
+    } else {
+      el.textContent = String(Math.floor(current));
+    }
+  }, step);
+}
+
+function initAnimations() {
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ratingsTrack = document.querySelector('.ratings-track');
+
+  const destinationCards = document.querySelectorAll('.dest-card');
+  destinationCards.forEach((card, i) => {
+    card.style.transitionDelay = `${i * 0.07}s`;
+    card.classList.add('reveal');
+  });
+
+  if (prefersReducedMotion) {
+    document.querySelectorAll('.reveal').forEach((el) => el.classList.add('visible'));
+    if (ratingsTrack) {
+      ratingsTrack.classList.add('running');
+    }
+    return;
+  }
+
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          if (entry.target.classList.contains('reveal-group')) {
+            entry.target.querySelectorAll('.reveal').forEach((el) => {
+              el.classList.add('visible');
+            });
+          } else {
+            entry.target.classList.add('visible');
+          }
+
+          if (entry.target.id === 'ratings' && ratingsTrack) {
+            setTimeout(() => {
+              ratingsTrack.classList.add('running');
+            }, 700);
+          }
+
+          if (entry.target.id === 'about') {
+            entry.target.querySelectorAll('.stat-number').forEach(countUp);
+          }
+        } else if (entry.boundingClientRect.top > 0) {
+          if (entry.target.classList.contains('reveal-group')) {
+            entry.target.querySelectorAll('.reveal').forEach((el) => {
+              el.classList.remove('visible');
+            });
+          } else {
+            entry.target.classList.remove('visible');
+          }
+
+          if (entry.target.id === 'ratings' && ratingsTrack) {
+            ratingsTrack.classList.remove('running');
+          }
+
+          if (entry.target.id === 'about') {
+            entry.target.querySelectorAll('.stat-number').forEach((el) => {
+              el.textContent = '0';
+            });
+          }
+        }
+      });
+    },
+    {
+      threshold: 0.08,
+      rootMargin: '0px 0px -40px 0px'
+    }
+  );
+
+  document.querySelectorAll('.reveal, .reveal-group').forEach((el) => {
+    if (el.classList.contains('reveal')) {
+      const parentGroup = el.closest('.reveal-group');
+      if (parentGroup && parentGroup !== el) {
+        return;
+      }
+    }
+
+    revealObserver.observe(el);
+  });
+}
+
+window.initAnimations = initAnimations;
+
+async function bootstrap() {
+  if (typeof window.loadAllComponents === 'function') {
+    await window.loadAllComponents();
+  }
+
+  initHeader();
+  initHero();
+  initDestinations();
+  initDestinationPrices();
+  initSearchBarNavigation();
+  initAnimations();
+}
+
+bootstrap();
+
+==== ./search.js ====
+const state = {
+  origin: '',
+  destination: '',
+  date: '',
+  sort: 'price_asc',
+  minPrice: 0,
+  maxPrice: 200,
+  seats: 1,
+  page: 1,
+  limit: 6
+};
+
+const dom = {
+  stripForm: document.getElementById('search-strip-form'),
+  stripFrom: document.getElementById('strip-from'),
+  stripTo: document.getElementById('strip-to'),
+  stripDate: document.getElementById('strip-date'),
+  filterDate: document.getElementById('filter-date'),
+  priceMin: document.getElementById('price-min'),
+  priceMax: document.getElementById('price-max'),
+  seatsValue: document.getElementById('seats-value'),
+  seatsLabel: document.getElementById('seats-label'),
+  sortChips: Array.from(document.querySelectorAll('.sort-chip')),
+  filtersCard: document.getElementById('filters-card'),
+  filtersToggle: document.querySelector('.filters-toggle'),
+  resultsList: document.getElementById('results-list'),
+  resultsCount: document.getElementById('results-count'),
+  resultsEmpty: document.getElementById('results-empty'),
+  pagination: document.getElementById('results-pagination')
+};
+
+const mapCache = new Map();
+const geoCache = new Map();
+let lastTrips = [];
+
+const priceMin = document.getElementById('price-min');
+const priceMax = document.getElementById('price-max');
+const trackFill = document.getElementById('track-fill');
+const tickMin = document.getElementById('tick-min');
+const tickMax = document.getElementById('tick-max');
+const priceLabel = document.getElementById('price-range-label');
+const sliderContainer = document.getElementById('slider-container');
+
+function debounce(callback, delay = 300) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => callback(...args), delay);
+  };
+}
+
+function getToken() {
+  return localStorage.getItem('tariqi_token');
+}
+
+function parseParams() {
+  const params = new URLSearchParams(window.location.search);
+  state.origin = params.get('from') || '';
+  state.destination = params.get('to') || '';
+  state.date = params.get('date') || '';
+  state.sort = params.get('sort') || 'price_asc';
+  state.minPrice = Number(params.get('minPrice')) || 0;
+  state.maxPrice = Number(params.get('maxPrice')) || 200;
+  state.seats = Math.min(Math.max(Number(params.get('seats')) || 1, 1), 8);
+  state.page = Math.max(Number(params.get('page')) || 1, 1);
+}
+
+function setupSearchHeader() {
+  const host = document.querySelector('[data-component="components/header.html"]');
+  const applyHeader = () => {
+    const header = document.getElementById('site-header');
+    if (!header) return false;
+    const brand = header.querySelector('.nav-brand');
+    if (brand) brand.setAttribute('href', 'index.html');
+    return true;
+  };
+
+  if (applyHeader()) return;
+  if (!host) return;
+
+  const observer = new MutationObserver(() => {
+    if (applyHeader()) observer.disconnect();
+  });
+
+  observer.observe(host, { childList: true, subtree: true });
+}
+
+function syncInputs() {
+  if (dom.stripFrom) dom.stripFrom.value = state.origin;
+  if (dom.stripTo) dom.stripTo.value = state.destination;
+  if (dom.stripDate) dom.stripDate.value = state.date;
+  if (dom.filterDate) dom.filterDate.value = state.date;
+  if (dom.priceMin) dom.priceMin.value = state.minPrice;
+  if (dom.priceMax) dom.priceMax.value = state.maxPrice;
+  if (dom.seatsValue) dom.seatsValue.textContent = String(state.seats);
+  if (dom.seatsLabel) dom.seatsLabel.textContent = `${state.seats}+ place disponible`;
+  setActiveSort(state.sort);
+  updatePriceSlider();
+}
+
+function updateUrl() {
+  const params = new URLSearchParams();
+  if (state.origin) params.set('from', state.origin);
+  if (state.destination) params.set('to', state.destination);
+  if (state.date) params.set('date', state.date);
+  if (state.sort) params.set('sort', state.sort);
+  if (state.minPrice) params.set('minPrice', String(state.minPrice));
+  if (state.maxPrice) params.set('maxPrice', String(state.maxPrice));
+  if (state.seats) params.set('seats', String(state.seats));
+  if (state.page) params.set('page', String(state.page));
+
+  const nextUrl = `${window.location.pathname}?${params.toString()}`;
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function setActiveSort(sort) {
+  dom.sortChips.forEach((chip) => {
+    chip.classList.toggle('is-active', chip.dataset.sort === sort);
+  });
+}
+
+function thumbPercent(input) {
+  const min = parseFloat(input.min);
+  const max = parseFloat(input.max);
+  const val = parseFloat(input.value);
+  const rawPct = (val - min) / (max - min);
+  const thumbHalf = 9;
+  const trackWidth = sliderContainer.offsetWidth;
+  const adjustedPct = (rawPct * (trackWidth - 2 * thumbHalf) + thumbHalf) / trackWidth;
+  return adjustedPct * 100;
+}
+
+function updatePriceSlider() {
+  if (parseFloat(priceMin.value) > parseFloat(priceMax.value)) {
+    priceMin.value = priceMax.value;
+  }
+  if (parseFloat(priceMax.value) < parseFloat(priceMin.value)) {
+    priceMax.value = priceMin.value;
+  }
+
+  const pMin = thumbPercent(priceMin);
+  const pMax = thumbPercent(priceMax);
+
+  trackFill.style.left = `${pMin}%`;
+  trackFill.style.width = `${pMax - pMin}%`;
+
+  tickMin.style.left = `${pMin}%`;
+  tickMax.style.left = `${pMax}%`;
+
+  priceLabel.textContent = `${priceMin.value} DT — ${priceMax.value} DT`;
+}
+
+function updatePriceLimits(trips) {
+  if (!dom.priceMax || !dom.priceMin) return;
+  const prices = trips.map((trip) => Number(trip.price || 0)).filter((value) => !Number.isNaN(value));
+  const max = prices.length ? Math.max(...prices, 50) : 200;
+  const cap = Math.min(Math.max(max, 50), 500);
+
+  dom.priceMin.max = String(cap);
+  dom.priceMax.max = String(cap);
+
+  if (state.maxPrice > cap) state.maxPrice = cap;
+  dom.priceMin.value = String(state.minPrice);
+  dom.priceMax.value = String(state.maxPrice);
+  updatePriceSlider();
+}
+
+function showSkeleton() {
+  if (!dom.resultsList) return;
+  dom.resultsList.innerHTML = '';
+  for (let i = 0; i < 4; i += 1) {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'skeleton-card';
+    dom.resultsList.appendChild(skeleton);
+  }
+}
+
+function showEmpty(show) {
+  if (!dom.resultsEmpty) return;
+  dom.resultsEmpty.classList.toggle('visible', show);
+}
+
+function formatDeparture(trip) {
+  const raw = trip.departure_time || trip.departure || '';
+  if (raw) {
+    const date = new Date(raw);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat('fr-FR', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    }
+  }
+
+  const datePart = trip.date || '';
+  const timePart = trip.time || '';
+  if (datePart) {
+    return `${datePart} ${timePart}`.trim();
+  }
+
+  return 'Horaire à confirmer';
+}
+
+function sortTrips(trips) {
+  const sorted = [...trips];
+  if (state.sort === 'price_asc') {
+    sorted.sort((a, b) => Number(a.price) - Number(b.price));
+  } else if (state.sort === 'price_desc') {
+    sorted.sort((a, b) => Number(b.price) - Number(a.price));
+  } else if (state.sort === 'date_asc') {
+    sorted.sort((a, b) => {
+      const aDate = new Date(a.departure_time || a.departure || a.date || 0).getTime();
+      const bDate = new Date(b.departure_time || b.departure || b.date || 0).getTime();
+      return aDate - bDate;
+    });
+  }
+  return sorted;
+}
+
+function filterTrips(trips) {
+  return trips.filter((trip) => {
+    const price = Number(trip.price || 0);
+    const seats = Number(trip.available_seats || trip.seats || 0);
+    if (price < state.minPrice || price > state.maxPrice) return false;
+    if (seats < state.seats) return false;
+    return true;
+  });
+}
+
+function renderPagination(pagination) {
+  if (!dom.pagination) return;
+  dom.pagination.innerHTML = '';
+
+  const totalPages = pagination.totalPages || 1;
+  const page = pagination.page || 1;
+
+  const prev = document.createElement('button');
+  prev.className = 'page-btn';
+  prev.textContent = '←';
+  prev.disabled = page === 1;
+  prev.addEventListener('click', () => {
+    state.page = page - 1;
+    fetchTrips();
+    dom.resultsList.scrollIntoView({ behavior: 'smooth' });
+  });
+  dom.pagination.appendChild(prev);
+
+  for (let i = 1; i <= totalPages; i += 1) {
+    const btn = document.createElement('button');
+    btn.className = 'page-btn';
+    btn.textContent = String(i);
+    btn.classList.toggle('active', i === page);
+    btn.addEventListener('click', () => {
+      state.page = i;
+      fetchTrips();
+      dom.resultsList.scrollIntoView({ behavior: 'smooth' });
+    });
+    dom.pagination.appendChild(btn);
+  }
+
+  const next = document.createElement('button');
+  next.className = 'page-btn';
+  next.textContent = '→';
+  next.disabled = page === totalPages;
+  next.addEventListener('click', () => {
+    state.page = page + 1;
+    fetchTrips();
+    dom.resultsList.scrollIntoView({ behavior: 'smooth' });
+  });
+  dom.pagination.appendChild(next);
+}
+
+function renderResults(trips, pagination) {
+  if (!dom.resultsList) return;
+  dom.resultsList.innerHTML = '';
+
+  const filtered = filterTrips(sortTrips(trips));
+  lastTrips = filtered;
+
+  if (dom.resultsCount) {
+    dom.resultsCount.textContent = `${filtered.length} trajets trouvés`;
+  }
+
+  if (!filtered.length) {
+    showEmpty(true);
+    if (dom.pagination) dom.pagination.innerHTML = '';
+    return;
+  }
+
+  showEmpty(false);
+  filtered.forEach((trip) => {
+    const card = document.createElement('div');
+    card.className = 'trip-card';
+    card.dataset.tripId = String(trip.id);
+
+    const origin = trip.origin || trip.departure || '';
+    const destination = trip.destination || '';
+    const seats = trip.available_seats || trip.seats || 0;
+    const driverName = (trip.driver && trip.driver.name) || trip.driver_name || 'Conducteur';
+    const departureLabel = formatDeparture(trip);
+
+    card.innerHTML = `
+      <div class="trip-summary">
+        <div class="trip-route">
+          <strong>${origin}</strong>
+          <span class="route-arrow">→</span>
+          <strong>${destination}</strong>
+          <div class="trip-meta">${departureLabel}</div>
+        </div>
+        <div class="trip-seats">${seats} places</div>
+        <div class="trip-price">
+          <strong>${trip.price} DT</strong>
+          <span>/ pers.</span>
+          <button class="trip-toggle" type="button">Voir le trajet</button>
+        </div>
+      </div>
+      <div class="trip-expand">
+        <div class="trip-expand-inner">
+          <div class="trip-expand-left">
+            <div class="driver-card">
+              <div class="driver-avatar">${driverName.trim().charAt(0).toUpperCase()}</div>
+              <div>
+                <div class="driver-name">${driverName}</div>
+                ${trip.driver_approved ? '<div class="driver-badge">Conducteur vérifié</div>' : ''}
+              </div>
+            </div>
+            <div class="trip-details">
+              <span>🕐 Départ: ${departureLabel}</span>
+              <span>💺 Places disponibles: ${seats}</span>
+              <span>💰 Prix: ${trip.price} DT / personne</span>
+            </div>
+            <button class="book-btn" type="button">Réserver ce trajet</button>
+          </div>
+          <div class="trip-expand-right">
+            <div class="trip-map" id="map-${trip.id}"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const toggleButtons = card.querySelectorAll('.trip-toggle');
+    const bookButton = card.querySelector('.book-btn');
+
+    toggleButtons.forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleCard(card, trip);
+      });
+    });
+
+    card.addEventListener('click', () => {
+      toggleCard(card, trip);
+    });
+
+    bookButton.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const token = getToken();
+      if (!token) {
+        const trigger = document.querySelector('[data-auth-trigger]');
+        if (trigger) trigger.click();
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ trip_id: trip.id })
+        });
+
+        if (response.status === 201) {
+          showToast('Réservation confirmée !', 'success');
+        } else if (response.status === 400) {
+          showToast("Plus de places disponibles.", 'error');
+        } else {
+          showToast('Une erreur est survenue.', 'error');
+        }
+      } catch (error) {
+        showToast('Une erreur est survenue.', 'error');
+      }
+    });
+
+    dom.resultsList.appendChild(card);
+  });
+
+  renderPagination(pagination);
+}
+
+function toggleCard(card, trip) {
+  const expanded = card.classList.contains('expanded');
+  document.querySelectorAll('.trip-card.expanded').forEach((openCard) => {
+    openCard.classList.remove('expanded');
+  });
+
+  if (!expanded) {
+    card.classList.add('expanded');
+    const mapEl = card.querySelector(`#map-${trip.id}`);
+    if (mapEl) {
+      setTimeout(() => initMap(trip, mapEl), 50);
+    }
+  }
+}
+
+function showToast(message, type) {
+  let toast = document.querySelector('.toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'toast';
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.classList.remove('success', 'error');
+  toast.classList.add('show', type);
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3000);
+}
+
+async function geocodeCity(city) {
+  if (!city) return null;
+  const key = city.toLowerCase();
+  if (geoCache.has(key)) return geoCache.get(key);
+
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      `${city}, Tunisia`
+    )}&format=json&limit=1&countrycodes=tn`
+  );
+  const data = await response.json();
+  if (!data || !data.length) return null;
+  const coords = [Number(data[0].lat), Number(data[0].lon)];
+  geoCache.set(key, coords);
+  return coords;
+}
+
+async function initMap(trip, container) {
+  if (mapCache.has(trip.id)) return;
+  if (!window.L) return;
+
+  const map = window.L.map(container, {
+    scrollWheelZoom: false,
+    zoomControl: false
+  });
+
+  window.L.control.zoom({ position: 'bottomright' }).addTo(map);
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const origin = trip.origin || trip.departure || '';
+  const destination = trip.destination || '';
+
+  let originCoords = null;
+  let destinationCoords = null;
+
+  // Assumed no route_coordinates in trip object.
+  if (Array.isArray(trip.route_coordinates) && trip.route_coordinates.length >= 2) {
+    originCoords = trip.route_coordinates[0];
+    destinationCoords = trip.route_coordinates[trip.route_coordinates.length - 1];
+  } else {
+    originCoords = await geocodeCity(origin);
+    destinationCoords = await geocodeCity(destination);
+  }
+
+  if (!originCoords || !destinationCoords) {
+    map.setView([34.0, 9.0], 6);
+    return;
+  }
+
+  const bounds = window.L.latLngBounds([originCoords, destinationCoords]);
+
+  window.L.circleMarker(originCoords, {
+    radius: 6,
+    color: '#2d8c4e',
+    fillColor: '#2d8c4e',
+    fillOpacity: 1
+  }).addTo(map);
+
+  window.L.circleMarker(destinationCoords, {
+    radius: 6,
+    color: '#4ecdc4',
+    fillColor: '#4ecdc4',
+    fillOpacity: 1
+  }).addTo(map);
+
+  window.L.polyline([originCoords, destinationCoords], {
+    color: '#2d8c4e',
+    weight: 3,
+    dashArray: '6, 8'
+  }).addTo(map);
+
+  map.fitBounds(bounds, { padding: [20, 20] });
+  mapCache.set(trip.id, map);
+}
+
+async function fetchTrips() {
+  showSkeleton();
+  updateUrl();
+
+  const params = new URLSearchParams();
+  if (state.origin) params.set('origin', state.origin);
+  if (state.destination) params.set('destination', state.destination);
+  if (state.date) params.set('date', state.date);
+  params.set('page', state.page);
+  params.set('limit', state.limit);
+
+  const token = getToken();
+
+  try {
+    const response = await fetch(`/api/trips?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    const data = await response.json();
+    const trips = Array.isArray(data.trips) ? data.trips : [];
+    const pagination = data.pagination || {
+      page: state.page,
+      totalPages: 1,
+      total: trips.length,
+      limit: state.limit
+    };
+
+    updatePriceLimits(trips);
+    renderResults(trips, pagination);
+  } catch (error) {
+    showEmpty(true);
+  }
+}
+
+const debouncedFetch = debounce(() => {
+  state.page = 1;
+  fetchTrips();
+}, 300);
+
+function bindEvents() {
+  if (dom.stripForm) {
+    dom.stripForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      state.origin = dom.stripFrom.value.trim();
+      state.destination = dom.stripTo.value.trim();
+      state.date = dom.stripDate.value;
+      if (dom.filterDate) dom.filterDate.value = state.date;
+      state.page = 1;
+      fetchTrips();
+    });
+  }
+
+  if (dom.filterDate) {
+    dom.filterDate.addEventListener('change', () => {
+      state.date = dom.filterDate.value;
+      if (dom.stripDate) dom.stripDate.value = state.date;
+      debouncedFetch();
+    });
+  }
+
+  dom.sortChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      state.sort = chip.dataset.sort;
+      setActiveSort(state.sort);
+      debouncedFetch();
+    });
+  });
+
+  if (dom.priceMin && dom.priceMax) {
+    dom.priceMin.addEventListener('input', () => {
+      updatePriceSlider();
+      state.minPrice = Number(dom.priceMin.value);
+      debouncedFetch();
+    });
+
+    dom.priceMax.addEventListener('input', () => {
+      updatePriceSlider();
+      state.maxPrice = Number(dom.priceMax.value);
+      debouncedFetch();
+    });
+  }
+
+  const stepperButtons = Array.from(document.querySelectorAll('.stepper-btn'));
+  stepperButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const step = Number(btn.dataset.step || 0);
+      state.seats = Math.min(Math.max(state.seats + step, 1), 8);
+      if (dom.seatsValue) dom.seatsValue.textContent = String(state.seats);
+      if (dom.seatsLabel) dom.seatsLabel.textContent = `${state.seats}+ place disponible`;
+      debouncedFetch();
+    });
+  });
+
+  const resetButtons = Array.from(document.querySelectorAll('.filters-reset'));
+  resetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.minPrice = 0;
+      state.maxPrice = 200;
+      state.seats = 1;
+      state.sort = 'price_asc';
+      state.page = 1;
+      if (dom.filterDate) dom.filterDate.value = '';
+      if (dom.stripDate) dom.stripDate.value = '';
+      setActiveSort(state.sort);
+      syncInputs();
+      fetchTrips();
+    });
+  });
+
+  if (dom.filtersToggle && dom.filtersCard) {
+    dom.filtersToggle.addEventListener('click', () => {
+      dom.filtersCard.classList.toggle('is-open');
+    });
+  }
+}
+
+setupSearchHeader();
+parseParams();
+syncInputs();
+bindEvents();
+fetchTrips();
+
+==== ./proposer.js ====
+(function () {
+  const overlay = document.getElementById('driver-auth-overlay');
+  const applyPanel = document.querySelector('[data-panel="apply"]');
+  const tripPanel = document.querySelector('[data-panel="trip"]');
+  const applyForm = document.getElementById('driver-apply-form');
+  const tripForm = document.getElementById('driver-trip-form');
+  const applySuccess = document.querySelector('.driver-apply-success');
+  const heroCta = document.querySelector('.driver-hero-cta');
+  const routeCoordsInput = document.getElementById('route-coords');
+  const routeHint = document.querySelector('.route-hint');
+  const routeReset = document.querySelector('.route-reset');
+
+  const mapState = {
+    map: null,
+    originMarker: null,
+    destinationMarker: null,
+    polyline: null,
+    points: [],
+    finalized: false
+  };
+
+  const geoCache = new Map();
+
+  function getToken() {
+    return localStorage.getItem('tariqi_token');
+  }
+
+  function setOverlayVisible(show) {
+    if (!overlay) return;
+    overlay.classList.toggle('is-visible', show);
+    overlay.setAttribute('aria-hidden', String(!show));
+  }
+
+  function setPanel(panelName) {
+    if (applyPanel) applyPanel.classList.toggle('is-active', panelName === 'apply');
+    if (tripPanel) tripPanel.classList.toggle('is-active', panelName === 'trip');
+  }
+
+  function clearErrors(form) {
+    if (!form) return;
+    form.querySelectorAll('.driver-field').forEach((field) => {
+      field.classList.remove('has-error');
+      const error = field.querySelector('.form-error');
+      if (error) error.textContent = '';
+    });
+  }
+
+  function setFieldError(form, fieldName, message) {
+    if (!form) return;
+    const field = form.querySelector(`[data-field="${fieldName}"]`);
+    if (!field) return;
+    field.classList.add('has-error');
+    const error = field.querySelector('.form-error');
+    if (error) error.textContent = message;
+  }
+
+  function showToast(message, type) {
+    let toast = document.querySelector('.driver-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'driver-toast';
+      document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.classList.toggle('success', type === 'success');
+    toast.classList.toggle('error', type === 'error');
+    toast.classList.add('show');
+
+    setTimeout(() => {
+      toast.classList.remove('show');
+    }, 3000);
+  }
+
+  async function checkAuthGate() {
+    const token = getToken();
+    setPanel(null);
+
+    if (!token) {
+      setOverlayVisible(true);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.status === 401) {
+        localStorage.removeItem('tariqi_token');
+        setOverlayVisible(true);
+        return;
+      }
+
+      if (!response.ok) {
+        setOverlayVisible(true);
+        return;
+      }
+
+      const data = await response.json();
+      const user = data.user;
+      if (user && user.role === 'driver') {
+        setOverlayVisible(false);
+        setPanel('trip');
+        initMap();
+        document.getElementById('driver-form-section').scrollIntoView({ behavior: 'smooth' });
+      } else {
+        setOverlayVisible(false);
+        setPanel('apply');
+      }
+    } catch (error) {
+      setOverlayVisible(true);
+    }
+  }
+
+  function hookAuthUpdate() {
+    if (typeof window.updateNavbarState === 'function') {
+      const original = window.updateNavbarState;
+      window.updateNavbarState = async function () {
+        await original();
+        await checkAuthGate();
+      };
+    } else {
+      setTimeout(hookAuthUpdate, 100);
+    }
+  }
+
+  function bindHeroCta() {
+    if (!heroCta) return;
+    heroCta.addEventListener('click', () => {
+      const section = document.getElementById('driver-form-section');
+      if (section) section.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  if (applyForm) {
+    applyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(applyForm);
+
+      const token = getToken();
+      if (!token) {
+        setOverlayVisible(true);
+        return;
+      }
+
+      const license = applyForm.querySelector('[name="license_number"]');
+      const vehicle = applyForm.querySelector('[name="vehicle_info"]');
+      let hasError = false;
+
+      if (!license.value.trim()) {
+        setFieldError(applyForm, 'license_number', 'Numéro de permis requis.');
+        hasError = true;
+      }
+
+      if (!vehicle.value.trim()) {
+        setFieldError(applyForm, 'vehicle_info', 'Informations véhicule requises.');
+        hasError = true;
+      }
+
+      if (hasError) return;
+
+      try {
+        const response = await fetch('/api/drivers/apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            license_number: license.value.trim(),
+            vehicle_info: vehicle.value.trim()
+          })
+        });
+
+        if (response.ok) {
+          applyForm.classList.add('is-hidden');
+          if (applySuccess) applySuccess.classList.add('is-visible');
+          return;
+        }
+
+        const data = await response.json().catch(() => null);
+        if (data && data.error) {
+          showToast(data.error, 'error');
+        } else {
+          showToast('Une erreur est survenue.', 'error');
+        }
+      } catch (error) {
+        showToast('Une erreur est survenue.', 'error');
+      }
+    });
+  }
+
+  function buildTripPayload(routeCoords) {
+    const origin = tripForm.querySelector('[name="origin"]').value.trim();
+    const destination = tripForm.querySelector('[name="destination"]').value.trim();
+    const date = tripForm.querySelector('[name="date"]').value;
+    const time = tripForm.querySelector('[name="time"]').value;
+    const availableSeats = tripForm.querySelector('[name="available_seats"]').value;
+    const price = tripForm.querySelector('[name="price"]').value;
+
+    const payload = {
+      origin,
+      destination,
+      departure_time: `${date}T${time}:00`,
+      available_seats: Number(availableSeats),
+      price: Number(price)
+    };
+
+    if (routeCoords && routeCoords.length) {
+      payload.route_coordinates = routeCoords;
+    }
+
+    return payload;
+  }
+
+  async function submitTrip(payload, token, allowRetry = true) {
+    const response = await fetch('/api/trips', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 400 && payload.route_coordinates && allowRetry) {
+      const data = await response.json().catch(() => null);
+      const message = data && (data.error || data.message || '');
+      if (message && /route|unknown/i.test(message)) {
+        const retryPayload = { ...payload };
+        delete retryPayload.route_coordinates;
+        return submitTrip(retryPayload, token, false);
+      }
+    }
+
+    return response;
+  }
+
+  if (tripForm) {
+    tripForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      clearErrors(tripForm);
+
+      const token = getToken();
+      if (!token) {
+        setOverlayVisible(true);
+        return;
+      }
+
+      const origin = tripForm.querySelector('[name="origin"]').value.trim();
+      const destination = tripForm.querySelector('[name="destination"]').value.trim();
+      const date = tripForm.querySelector('[name="date"]').value;
+      const time = tripForm.querySelector('[name="time"]').value;
+      const seats = tripForm.querySelector('[name="available_seats"]').value;
+      const price = tripForm.querySelector('[name="price"]').value;
+
+      let hasError = false;
+      if (!origin) {
+        setFieldError(tripForm, 'origin', 'Ville de départ requise.');
+        hasError = true;
+      }
+      if (!destination) {
+        setFieldError(tripForm, 'destination', 'Ville d\'arrivée requise.');
+        hasError = true;
+      }
+      if (!date) {
+        setFieldError(tripForm, 'date', 'Date requise.');
+        hasError = true;
+      }
+      if (!time) {
+        setFieldError(tripForm, 'time', 'Heure requise.');
+        hasError = true;
+      }
+      if (!seats || Number(seats) < 1) {
+        setFieldError(tripForm, 'available_seats', 'Indiquez le nombre de places.');
+        hasError = true;
+      }
+      if (!price || Number(price) < 1) {
+        setFieldError(tripForm, 'price', 'Indiquez un prix valide.');
+        hasError = true;
+      }
+
+      if (hasError) return;
+
+      const coordsValue = routeCoordsInput ? routeCoordsInput.value : '';
+      const coords = coordsValue ? JSON.parse(coordsValue) : [];
+      const payload = buildTripPayload(coords);
+
+      try {
+        const response = await submitTrip(payload, token);
+        if (response.status === 201) {
+          tripForm.reset();
+          resetRoute();
+          showToast('Trajet publié !', 'success');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+
+        const data = await response.json().catch(() => null);
+        if (response.status === 400 && data && Array.isArray(data.details)) {
+          data.details.forEach((detail) => {
+            const field = detail.field === 'departure_time' ? 'date' : detail.field;
+            setFieldError(tripForm, field, detail.message);
+          });
+          return;
+        }
+
+        showToast('Une erreur est survenue.', 'error');
+      } catch (error) {
+        showToast('Une erreur est survenue.', 'error');
+      }
+    });
+  }
+
+  function updateRouteInput() {
+    if (!routeCoordsInput) return;
+    routeCoordsInput.value = JSON.stringify(mapState.points);
+  }
+
+  function drawPolyline() {
+    if (!mapState.map) return;
+    const coords = mapState.points.map((point) => [point.lat, point.lng]);
+
+    if (!coords.length) {
+      if (mapState.polyline) {
+        mapState.map.removeLayer(mapState.polyline);
+        mapState.polyline = null;
+      }
+      return;
+    }
+
+    if (!mapState.polyline) {
+      mapState.polyline = window.L.polyline(coords, {
+        color: '#2d8c4e',
+        weight: 4
+      }).addTo(mapState.map);
+    } else {
+      mapState.polyline.setLatLngs(coords);
+    }
+  }
+
+  function updateMarkers() {
+    if (!mapState.map) return;
+    const origin = mapState.points[0];
+    const destination = mapState.points[mapState.points.length - 1];
+
+    if (origin) {
+      if (!mapState.originMarker) {
+        mapState.originMarker = window.L.circleMarker([origin.lat, origin.lng], {
+          radius: 6,
+          color: '#2d8c4e',
+          fillColor: '#2d8c4e',
+          fillOpacity: 1
+        }).addTo(mapState.map);
+      } else {
+        mapState.originMarker.setLatLng([origin.lat, origin.lng]);
+      }
+    }
+
+    if (destination && mapState.points.length > 1) {
+      if (!mapState.destinationMarker) {
+        mapState.destinationMarker = window.L.circleMarker([destination.lat, destination.lng], {
+          radius: 6,
+          color: '#4ecdc4',
+          fillColor: '#4ecdc4',
+          fillOpacity: 1
+        }).addTo(mapState.map);
+      } else {
+        mapState.destinationMarker.setLatLng([destination.lat, destination.lng]);
+      }
+    }
+  }
+
+  function addRoutePoint(latlng) {
+    if (mapState.finalized) return;
+    mapState.points.push({ lat: latlng.lat, lng: latlng.lng });
+    drawPolyline();
+    updateMarkers();
+    updateRouteInput();
+    if (routeHint) routeHint.classList.add('is-hidden');
+  }
+
+  function resetRoute() {
+    mapState.points = [];
+    mapState.finalized = false;
+    if (mapState.originMarker) {
+      mapState.map.removeLayer(mapState.originMarker);
+      mapState.originMarker = null;
+    }
+    if (mapState.destinationMarker) {
+      mapState.map.removeLayer(mapState.destinationMarker);
+      mapState.destinationMarker = null;
+    }
+    if (mapState.polyline) {
+      mapState.map.removeLayer(mapState.polyline);
+      mapState.polyline = null;
+    }
+    if (routeHint) routeHint.classList.remove('is-hidden');
+    updateRouteInput();
+    if (mapState.map) {
+      mapState.map.setView([34.0, 9.0], 6);
+    }
+  }
+
+  function initMap() {
+    if (mapState.map || !window.L) return;
+    const mapEl = document.getElementById('route-map');
+    if (!mapEl) return;
+
+    mapState.map = window.L.map(mapEl, {
+      scrollWheelZoom: false,
+      doubleClickZoom: false
+    });
+
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(mapState.map);
+
+    mapState.map.setView([34.0, 9.0], 6);
+
+    mapState.map.on('click', (event) => {
+      addRoutePoint(event.latlng);
+    });
+
+    mapState.map.on('dblclick', () => {
+      mapState.finalized = true;
+      updateRouteInput();
+    });
+
+    if (routeReset) {
+      routeReset.addEventListener('click', resetRoute);
+    }
+  }
+
+  async function geocodeCity(city) {
+    if (!city) return null;
+    const key = city.toLowerCase();
+    if (geoCache.has(key)) return geoCache.get(key);
+
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+        `${city}, Tunisia`
+      )}&format=json&limit=1&countrycodes=tn`
+    );
+
+    const data = await response.json();
+    if (!data || !data.length) return null;
+    const coords = { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+    geoCache.set(key, coords);
+    return coords;
+  }
+
+  async function syncMapFromInput(type) {
+    if (!mapState.map) initMap();
+    if (!mapState.map) return;
+
+    const originInput = tripForm.querySelector('[name="origin"]');
+    const destinationInput = tripForm.querySelector('[name="destination"]');
+    const value = type === 'origin' ? originInput.value.trim() : destinationInput.value.trim();
+
+    const coords = await geocodeCity(value);
+    if (!coords) return;
+
+    if (type === 'origin') {
+      if (!mapState.points.length) {
+        mapState.points.push(coords);
+      } else {
+        mapState.points[0] = coords;
+      }
+    } else {
+      if (mapState.points.length < 2) {
+        if (!mapState.points.length) {
+          mapState.points.push(coords);
+        } else {
+          mapState.points[1] = coords;
+        }
+      } else {
+        mapState.points[mapState.points.length - 1] = coords;
+      }
+    }
+
+    drawPolyline();
+    updateMarkers();
+    updateRouteInput();
+    if (routeHint) routeHint.classList.add('is-hidden');
+    mapState.map.setView([coords.lat, coords.lng], 8);
+  }
+
+  function bindMapInputs() {
+    if (!tripForm) return;
+    const originInput = tripForm.querySelector('[name="origin"]');
+    const destinationInput = tripForm.querySelector('[name="destination"]');
+
+    if (originInput) {
+      originInput.addEventListener('blur', () => {
+        syncMapFromInput('origin');
+      });
+    }
+
+    if (destinationInput) {
+      destinationInput.addEventListener('blur', () => {
+        syncMapFromInput('destination');
+      });
+    }
+  }
+
+  hookAuthUpdate();
+  bindHeroCta();
+  bindMapInputs();
+  checkAuthGate();
+})();

@@ -48,7 +48,7 @@
           </div>
 
           <div class="filters-card" id="filters-card">
-            <div class="filters-section">
+            <div class="filters-section filter-group">
               <p class="filters-title">Trier par</p>
               <div class="filters-chips">
                 <button class="sort-chip" type="button" data-sort="price_asc">Prix croissant</button>
@@ -57,19 +57,21 @@
               </div>
             </div>
 
-            <div class="filters-section">
+            <div class="filters-section filter-group">
               <p class="filters-title">Prix</p>
-              <div class="range-wrapper">
-                <div class="range-track">
-                  <div class="range-fill" id="price-range-fill"></div>
+              <div class="price-slider-container" id="slider-container">
+                <div class="slider-track-bg">
+                  <div class="slider-track-fill" id="track-fill"></div>
                 </div>
-                <input id="price-min" class="range-input" type="range" min="0" max="200" value="0" />
-                <input id="price-max" class="range-input" type="range" min="0" max="200" value="200" />
+                <span class="thumb-tick" id="tick-min"></span>
+                <span class="thumb-tick" id="tick-max"></span>
+                <input id="price-min" class="range-input" type="range" min="0" max="200" value="0" step="1" />
+                <input id="price-max" class="range-input" type="range" min="0" max="200" value="200" step="1" />
               </div>
               <p class="range-label" id="price-range-label">0 DT — 200 DT</p>
             </div>
 
-            <div class="filters-section">
+            <div class="filters-section filter-group">
               <p class="filters-title">Places disponibles</p>
               <div class="stepper">
                 <button class="stepper-btn" type="button" data-step="-1">−</button>
@@ -79,7 +81,7 @@
               <p class="stepper-label" id="seats-label">1+ place disponible</p>
             </div>
 
-            <div class="filters-section">
+            <div class="filters-section filter-group">
               <p class="filters-title">Date</p>
               <input id="filter-date" class="filter-date" type="date" />
             </div>
